@@ -30,6 +30,13 @@ package cloud.piranha.resource.impl;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.io.TempDir;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -74,5 +81,55 @@ class DirectoryResourceTest {
         DirectoryResource resource = new DirectoryResource();
         resource.setRootDirectory(new File("src/main/java"));
         assertNotNull(resource.getRootDirectory());
+    }
+
+    /**
+     * Test that a location with dot segments resolves within the root directory.
+     *
+     * @param directory the temporary directory.
+     * @throws IOException when an I/O error occurs.
+     */
+    @Test
+    void testDotSegmentsWithinRoot(@TempDir Path directory) throws IOException {
+        Path root = Files.createDirectories(directory.resolve("root"));
+        Files.writeString(Files.createDirectories(root.resolve("css")).resolve("site.css"), "CSS");
+        Files.writeString(root.resolve("index.html"), "INDEX");
+        DirectoryResource resource = new DirectoryResource(root.toFile());
+        assertNotNull(resource.getResource("/css/../index.html"));
+        try (InputStream stream = resource.getResourceAsStream("/./css/../index.html")) {
+            assertEquals("INDEX", new String(stream.readAllBytes(), UTF_8));
+        }
+    }
+
+    /**
+     * Test that a location that goes outside the root directory is not found.
+     *
+     * @param directory the temporary directory.
+     * @throws IOException when an I/O error occurs.
+     */
+    @Test
+    void testLocationOutsideRoot(@TempDir Path directory) throws IOException {
+        Path root = Files.createDirectories(directory.resolve("root"));
+        Files.createDirectories(root.resolve("css"));
+        Files.writeString(directory.resolve("outside.txt"), "OUTSIDE");
+        DirectoryResource resource = new DirectoryResource(root.toFile());
+        for (String location : new String[] { "/../outside.txt", "../outside.txt", "/css/../../outside.txt", "/css\\..\\..\\outside.txt" }) {
+            assertNull(resource.getResource(location), location);
+            assertNull(resource.getResourceAsStream(location), location);
+        }
+    }
+
+    /**
+     * Test that a resource without a root directory finds nothing, not even an absolute file.
+     *
+     * @param directory the temporary directory.
+     * @throws IOException when an I/O error occurs.
+     */
+    @Test
+    void testNoRootDirectory(@TempDir Path directory) throws IOException {
+        Path file = Files.writeString(directory.resolve("file.txt"), "FILE");
+        DirectoryResource resource = new DirectoryResource();
+        assertNull(resource.getResource(file.toString()));
+        assertNull(resource.getResourceAsStream(file.toString()));
     }
 }

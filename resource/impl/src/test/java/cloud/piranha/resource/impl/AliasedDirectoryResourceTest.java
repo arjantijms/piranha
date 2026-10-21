@@ -28,8 +28,12 @@
 package cloud.piranha.resource.impl;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The JUnit test for AliasedDirectoryResource.
@@ -112,5 +116,24 @@ class AliasedDirectoryResourceTest {
         resource.setRootDirectory(new File("src/main/java"));
         resource.setAlias("/alias");
         assertNotNull(resource.getRootDirectory());
+    }
+
+    /**
+     * Test that a location that goes outside the root directory is not found.
+     *
+     * @param directory the temporary directory.
+     * @throws IOException when an I/O error occurs.
+     */
+    @Test
+    void testLocationOutsideRoot(@TempDir Path directory) throws IOException {
+        Path root = Files.createDirectories(directory.resolve("root"));
+        Files.writeString(root.resolve("inside.txt"), "INSIDE");
+        Files.writeString(directory.resolve("outside.txt"), "OUTSIDE");
+        AliasedDirectoryResource resource = new AliasedDirectoryResource(root.toFile(), "/alias");
+        assertNotNull(resource.getResource("/alias/inside.txt"));
+        for (String location : new String[] { "/alias/../outside.txt", "/alias/./../outside.txt" }) {
+            assertNull(resource.getResource(location), location);
+            assertNull(resource.getResourceAsStream(location), location);
+        }
     }
 }

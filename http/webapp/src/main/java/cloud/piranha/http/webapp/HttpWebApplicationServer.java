@@ -45,6 +45,8 @@ import java.lang.System.Logger;
 import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.ERROR;
 import static java.lang.System.Logger.Level.TRACE;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -177,7 +179,7 @@ public class HttpWebApplicationServer implements HttpServerProcessor, WebApplica
             if (LOGGER.isLoggable(TRACE)) {
                 LOGGER.log(TRACE, "Request URI is invalid");
             }
-            response.sendError(500);
+            sendError(response, 500);
             return;
         }
 
@@ -185,15 +187,24 @@ public class HttpWebApplicationServer implements HttpServerProcessor, WebApplica
             LOGGER.log(TRACE, "Request URI: {0}", requestUri);
         }
 
-        // The request URI stays as sent, the path the request is mapped with has no empty segments (Servlet 3.5.2)
-        String path = removeEmptySegments(requestUri);
+        // The request URI stays as sent. The path the request is mapped with has no empty, "." or ".." segments, so
+        // they can't be used to get around the protection of WEB-INF and META-INF, or out of the web application
+        // (Servlet 3.5.2).
+        String path = normalizePath(requestUri);
+        if (path == null) {
+            if (LOGGER.isLoggable(TRACE)) {
+                LOGGER.log(TRACE, "Request URI goes above the root or has a backslash: {0}", requestUri);
+            }
+            sendError(response, 400);
+            return;
+        }
 
         WebApplication webApplication = requestMapper.findMapping(path);
         if (webApplication == null) {
             if (LOGGER.isLoggable(TRACE)) {
                 LOGGER.log(TRACE, "No web application found for request URI: {0}", requestUri);
             }
-            response.sendError(404);
+            sendError(response, 404);
             return;
         }
 
@@ -221,25 +232,49 @@ public class HttpWebApplicationServer implements HttpServerProcessor, WebApplica
     }
 
     /**
-     * Removes the empty segments of the given path, other than the last one, so {@code /a//b//} becomes {@code /a/b/}.
+     * Normalizes the path of a request: empty segments other than the last one and "." segments are removed, and a
+     * ".." segment removes the segment before it. So {@code /a//b/./c/../} becomes {@code /a/b/}. A path that doesn't
+     * start with a slash, like {@code *}, stays as it is.
      *
      * @param path the path.
-     * @return the path without empty segments.
+     * @return the normalized path, or null when the path goes above the root or has a backslash, which some file
+     * systems take as a separator.
      */
-    static String removeEmptySegments(String path) {
-        if (!path.contains("//")) {
+    static String normalizePath(String path) {
+        if (path.indexOf('\\') != -1) {
+            return null;
+        }
+        if (!path.startsWith("/")) {
             return path;
         }
 
-        StringBuilder builder = new StringBuilder(path.length());
-        for (int i = 0; i < path.length(); i++) {
-            char c = path.charAt(i);
-            if (c != '/' || builder.isEmpty() || builder.charAt(builder.length() - 1) != '/') {
-                builder.append(c);
+        String[] segments = path.split("/", -1);
+        List<String> normalized = new ArrayList<>();
+        for (int i = 1; i < segments.length; i++) {
+            String segment = segments[i];
+            if (segment.equals("..")) {
+                if (normalized.isEmpty()) {
+                    return null;
+                }
+                normalized.remove(normalized.size() - 1);
+            } else if (!segment.equals(".") && (!segment.isEmpty() || i == segments.length - 1)) {
+                // An empty last segment is the trailing slash
+                normalized.add(segment);
             }
         }
+        return "/" + String.join("/", normalized);
+    }
 
-        return builder.toString();
+    /**
+     * Sends an error for a request that no web application handles, which is why the response is flushed here.
+     *
+     * @param response the response.
+     * @param status the status code.
+     * @throws IOException when an I/O error occurs.
+     */
+    private static void sendError(WebApplicationResponse response, int status) throws IOException {
+        response.sendError(status);
+        response.flushBuffer();
     }
 
     @Override

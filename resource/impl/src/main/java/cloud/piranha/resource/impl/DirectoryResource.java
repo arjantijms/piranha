@@ -37,6 +37,7 @@ import static java.lang.System.Logger.Level.DEBUG;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.function.Predicate;
@@ -110,14 +111,12 @@ public class DirectoryResource implements Resource {
     @Override
     public URL getResource(String location) {
         URL result = null;
-        if (location != null) {
-            File file = new File(rootDirectory, location);
-            if (file.exists()) {
-                try {
-                    result = new URL(file.toURI().toString());
-                } catch (MalformedURLException mue) {
-                    LOGGER.log(DEBUG, "Malformed URL for find directory resource", mue);
-                }
+        File file = resolveFile(rootDirectory, location);
+        if (file != null && file.exists()) {
+            try {
+                result = new URL(file.toURI().toString());
+            } catch (MalformedURLException mue) {
+                LOGGER.log(DEBUG, "Malformed URL for find directory resource", mue);
             }
         }
         return result;
@@ -131,13 +130,38 @@ public class DirectoryResource implements Resource {
     @Override
     public InputStream getResourceAsStream(String location) {
         InputStream result = null;
-        File file = new File(rootDirectory, location);
-        try {
-            result = new FileInputStream(file);
-        } catch (FileNotFoundException fnfe) {
-            LOGGER.log(DEBUG, "Unable to find directory resource", fnfe);
+        File file = resolveFile(rootDirectory, location);
+        if (file != null) {
+            try {
+                result = new FileInputStream(file);
+            } catch (FileNotFoundException fnfe) {
+                LOGGER.log(DEBUG, "Unable to find directory resource", fnfe);
+            }
         }
         return result;
+    }
+
+    /**
+     * Resolves a location against a root directory, as long as the result stays within that directory, so that a
+     * location with ".." segments can't reach files outside it.
+     *
+     * @param rootDirectory the root directory.
+     * @param location the location.
+     * @return the file, or null when there's no root directory or location, or the location is outside the root
+     * directory or not a valid path.
+     */
+    static File resolveFile(File rootDirectory, String location) {
+        if (rootDirectory == null || location == null) {
+            return null;
+        }
+        try {
+            Path root = rootDirectory.toPath().toAbsolutePath().normalize();
+            Path file = new File(rootDirectory, location).toPath().toAbsolutePath().normalize();
+            return file.startsWith(root) ? file.toFile() : null;
+        } catch (InvalidPathException ipe) {
+            LOGGER.log(DEBUG, "Invalid directory resource location", ipe);
+            return null;
+        }
     }
 
     /**

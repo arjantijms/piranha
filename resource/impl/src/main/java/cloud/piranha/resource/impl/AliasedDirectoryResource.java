@@ -88,8 +88,8 @@ public class AliasedDirectoryResource implements Resource {
         URL result = null;
         if (location.startsWith(alias)) {
             location = location.substring(alias.length());
-            File file = new File(rootDirectory, location);
-            if (file.exists()) {
+            File file = DirectoryResource.resolveFile(rootDirectory, location);
+            if (file != null && file.exists()) {
                 try {
                     result = file.toURI().toURL();
                 } catch (MalformedURLException mue) {
@@ -105,11 +105,13 @@ public class AliasedDirectoryResource implements Resource {
         InputStream result = null;
         if (location.startsWith(alias)) {
             location = location.substring(alias.length() + 1);
-            File file = new File(rootDirectory, location);
-            try {
-                result = new FileInputStream(file);
-            } catch (FileNotFoundException fnfe) {
-                LOGGER.log(WARNING, "Unable to find aliased directory resource", fnfe);
+            File file = DirectoryResource.resolveFile(rootDirectory, location);
+            if (file != null) {
+                try {
+                    result = new FileInputStream(file);
+                } catch (FileNotFoundException fnfe) {
+                    LOGGER.log(WARNING, "Unable to find aliased directory resource", fnfe);
+                }
             }
         }
         return result;
