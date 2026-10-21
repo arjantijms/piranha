@@ -57,6 +57,12 @@ import static java.lang.System.Logger.Level.INFO;
  * <td>coreprofile by default</td>
  * </tr>
  * <tr>
+ * <td>piranha.httpServerClass</td>
+ * <td>The class name of the HTTP server the Piranha process uses (its
+ * jars go on the class path with -cp in piranha.jvmArguments)</td>
+ * <td>the distribution's default HTTP server if not set</td>
+ * </tr>
+ * <tr>
  * <td>piranha.httpPort</td>
  * <td>The integer to select the HTTP port to use for the Piranha process</td>
  * <td>if not set an unused port will be automatically chosen</td>
@@ -134,6 +140,11 @@ public class ManagedPiranhaContainerConfiguration implements ContainerConfigurat
     private Integer httpPort = System.getProperty("piranha.httpPort") != null ? Integer.valueOf(System.getProperty("piranha.httpPort")) : null;
 
     /**
+     * Stores the HTTP server class.
+     */
+    private String httpServerClass = System.getProperty("piranha.httpServerClass", "");
+
+    /**
      * Stores the JVM arguments.
      */
     private String jvmArguments = System.getProperty("piranha.jvmArguments", "");
@@ -200,6 +211,15 @@ public class ManagedPiranhaContainerConfiguration implements ContainerConfigurat
             httpPort = FreePortFinder.findFreeLocalPort();
         }
         return httpPort;
+    }
+
+    /**
+     * Get the HTTP server class.
+     *
+     * @return the HTTP server class, or an empty string for the default.
+     */
+    public String getHttpServerClass() {
+        return httpServerClass;
     }
 
     /**
@@ -293,6 +313,15 @@ public class ManagedPiranhaContainerConfiguration implements ContainerConfigurat
     }
 
     /**
+     * Set the HTTP server class.
+     *
+     * @param httpServerClass the HTTP server class.
+     */
+    public void setHttpServerClass(String httpServerClass) {
+        this.httpServerClass = httpServerClass;
+    }
+
+    /**
      * Set the JVM arguments.
      *
      * @param jvmArguments the JVM arguments.
@@ -324,6 +353,7 @@ public class ManagedPiranhaContainerConfiguration implements ContainerConfigurat
         LOGGER.log(INFO, """
 
             Using HTTP Port:     {0}
+            Using HTTP server:   {5}
             Using JVM arguments: {1}
             Using protocol:      {2}
             Using debug:         {3}
@@ -334,6 +364,7 @@ public class ManagedPiranhaContainerConfiguration implements ContainerConfigurat
                 getJvmArguments(),
                 getProtocol(),
                 isDebug(),
-                isSuspend());
+                isSuspend(),
+                getHttpServerClass().isEmpty() ? "default" : getHttpServerClass());
     }
 }

@@ -282,8 +282,14 @@ public class DefaultWebApplicationResponse implements WebApplicationResponse {
             webApplicationOutputStream.flushBuffer();
             setCommitted(true);
         }
+        /*
+         * What's written after the commit is buffered too; flushing the
+         * writer flushes the output stream as well.
+         */
         if (gotWriter) {
             writer.flush();
+        } else {
+            webApplicationOutputStream.flush();
         }
     }
 

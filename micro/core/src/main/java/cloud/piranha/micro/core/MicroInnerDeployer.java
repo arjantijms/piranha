@@ -201,6 +201,11 @@ public class MicroInnerDeployer {
     private HttpServer httpServer;
 
     /**
+     * Stores the web application.
+     */
+    private WebApplication webApplication;
+
+    /**
      * Constructor.
      */
     public MicroInnerDeployer() {
@@ -217,7 +222,7 @@ public class MicroInnerDeployer {
      */
     public Map<String, Object> start(Archive<?> applicationArchive, ClassLoader classLoader, Map<String, Function<URL, URLConnection>> handlers, Map<String, Object> config) {
         try {
-            WebApplication webApplication = getWebApplication(applicationArchive, classLoader);
+            webApplication = getWebApplication(applicationArchive, classLoader);
 
             LOGGER.log(INFO,
                     "Starting web application " + applicationArchive.getName() + " on Piranha Micro " + webApplication.getAttribute(MICRO_PIRANHA));
@@ -334,10 +339,26 @@ public class MicroInnerDeployer {
 
     /**
      * Stop the application.
+     *
+     * <p>
+     * The HTTP server is stopped first, so no new requests come in. Then the web application is stopped and destroyed,
+     * so that its servlets are destroyed and its listeners are notified (e.g. Weld shuts down, destroying the beans).
      */
     public void stop() {
         if (httpServer != null) {
             httpServer.stop();
+        }
+
+        if (webApplication != null) {
+            ClassLoader oldClassLoader = Thread.currentThread().getContextClassLoader();
+            try {
+                Thread.currentThread().setContextClassLoader(webApplication.getClassLoader());
+                webApplication.stop();
+                webApplication.destroy();
+            } finally {
+                Thread.currentThread().setContextClassLoader(oldClassLoader);
+                webApplication = null;
+            }
         }
     }
 

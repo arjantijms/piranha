@@ -178,4 +178,40 @@ class HttpWebApplicationServerTest {
         httpServer.stop();
         server.stop();
     }
+
+    /**
+     * Test that empty path segments (other than the last) are removed before the request is mapped, as in the URI path
+     * canonicalization of the Servlet specification (3.5.2).
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testEmptySegmentsAreRemoved() throws Exception {
+        HttpWebApplicationServer server = new HttpWebApplicationServer();
+        HttpServer httpServer = new DefaultHttpServer(8183, server, false);
+        DefaultWebApplication application = new DefaultWebApplication();
+        application.setContextPath("/context");
+        application.addServlet("snoop", new TestSnoopServlet());
+        application.addServletMapping("snoop", "/snoop/*");
+        server.addWebApplication(application);
+        server.initialize();
+        server.start();
+        httpServer.start();
+        try {
+            assertEquals("/context", get("http://localhost:8183/context//snoop//index.html?getContextPath"));
+            assertEquals("/snoop", get("http://localhost:8183/context//snoop//index.html?getServletPath"));
+            assertEquals("/index.html", get("http://localhost:8183/context//snoop//index.html?getPathInfo"));
+            assertEquals("/index/", get("http://localhost:8183/context/snoop//index//?getPathInfo"));
+        } finally {
+            httpServer.stop();
+            server.stop();
+        }
+    }
+
+    private static String get(String uri) throws Exception {
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(new URI(uri)).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        return response.body().strip();
+    }
 }

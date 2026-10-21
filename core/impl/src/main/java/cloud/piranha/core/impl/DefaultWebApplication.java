@@ -825,10 +825,14 @@ public class DefaultWebApplication implements WebApplication {
     @Override
     public DefaultServletRequestDispatcher getRequestDispatcher(String path) {
         try {
-            DefaultServletInvocation servletInvocation = invocationFinder.findServletInvocationByPath(null, path, null);
+            // The servlet path and path info of the invocation come from the path without its query string. The
+            // dispatcher gets the whole path, for the query string.
+            String pathWithoutQueryString = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
+            DefaultServletInvocation servletInvocation = invocationFinder.findServletInvocationByPath(null, pathWithoutQueryString, null);
             if (servletInvocation == null) {
                 return null;
             }
+            servletInvocation.setInvocationPath(path);
             return getInvocationDispatcher(servletInvocation);
         } catch (IOException | ServletException e) {
             LOGGER.log(WARNING, "Error occurred while getting request dispatcher", e);

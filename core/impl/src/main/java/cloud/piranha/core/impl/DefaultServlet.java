@@ -73,17 +73,22 @@ public class DefaultServlet extends HttpServlet {
             return;
         }
 
-        setContentType(request, response);
+        // An included servlet can't set headers
+        if (request.getDispatcherType() != DispatcherType.INCLUDE) {
+            setContentType(request, response);
+        }
 
+        // Without closing the output stream or the writer of the response: when the resource is included, they're
+        // those of the including servlet, which may still write to them
         try (InputStream inputStream = new BufferedInputStream(resource)) {
-            try (OutputStream outputStream = new BufferedOutputStream(response.getOutputStream())) {
+            try {
+                OutputStream outputStream = new BufferedOutputStream(response.getOutputStream());
                 inputStream.transferTo(outputStream);
                 outputStream.flush();
             } catch (IllegalStateException ise) {
-                try (PrintWriter writer = response.getWriter()) {
-                    writer.print(new String(inputStream.readAllBytes()));
-                    writer.flush();
-                }
+                PrintWriter writer = response.getWriter();
+                writer.print(new String(inputStream.readAllBytes()));
+                writer.flush();
             }
         }
     }
@@ -100,7 +105,8 @@ public class DefaultServlet extends HttpServlet {
         String requestURI;
         String contextPath;
 
-        if (request.getDispatcherType() == DispatcherType.INCLUDE) {
+        // The include attributes aren't set for an include with a named dispatcher
+        if (request.getDispatcherType() == DispatcherType.INCLUDE && request.getAttribute(RequestDispatcher.INCLUDE_REQUEST_URI) != null) {
             requestURI = (String) request.getAttribute(RequestDispatcher.INCLUDE_REQUEST_URI);
             contextPath = (String) request.getAttribute(RequestDispatcher.INCLUDE_CONTEXT_PATH);
         } else {
@@ -112,7 +118,7 @@ public class DefaultServlet extends HttpServlet {
     }
 
     private void setContentType(HttpServletRequest request, HttpServletResponse response) {
-        String uri = request.getRequestURI();
+        String uri = getPath(request);
 
         String filename = uri.contains("/") ? uri.substring(uri.lastIndexOf("/") + 1) : uri.isEmpty()? "" : uri.substring(1);
         String mimeType = request.getServletContext().getMimeType(filename);

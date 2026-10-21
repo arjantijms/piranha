@@ -29,15 +29,20 @@ package cloud.piranha.http.webapp;
 
 import cloud.piranha.core.impl.DefaultWebApplication;
 import cloud.piranha.http.api.HttpServer;
+import cloud.piranha.http.api.HttpServerRequest;
 import cloud.piranha.http.impl.DefaultHttpServer;
 import jakarta.servlet.ServletRegistration.Dynamic;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.CookieManager;
 import java.net.HttpCookie;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -940,5 +945,90 @@ class HttpWebApplicationRequestTest {
         } catch (IOException ioe) {
             throw new RuntimeException(ioe);
         }
+    }
+
+    /**
+     * Test that the host names, which can take a reverse DNS lookup each, are only looked up when they're asked for,
+     * and only once.
+     */
+    @Test
+    void testHostNamesAreLookedUpWhenAskedFor() {
+        AtomicInteger lookups = new AtomicInteger();
+        HttpServerRequest serverRequest = new HttpServerRequest() {
+            @Override
+            public String getHeader(String name) {
+                return null;
+            }
+
+            @Override
+            public Iterator<String> getHeaders(String name) {
+                return Collections.emptyIterator();
+            }
+
+            @Override
+            public Iterator<String> getHeaderNames() {
+                return Collections.emptyIterator();
+            }
+
+            @Override
+            public InputStream getInputStream() {
+                return InputStream.nullInputStream();
+            }
+
+            @Override
+            public String getLocalAddress() {
+                return "127.0.0.1";
+            }
+
+            @Override
+            public String getLocalHostname() {
+                lookups.incrementAndGet();
+                return "local";
+            }
+
+            @Override
+            public int getLocalPort() {
+                return 8080;
+            }
+
+            @Override
+            public String getMethod() {
+                return "GET";
+            }
+
+            @Override
+            public String getRemoteAddress() {
+                return "127.0.0.2";
+            }
+
+            @Override
+            public String getRemoteHostname() {
+                lookups.incrementAndGet();
+                return "remote";
+            }
+
+            @Override
+            public int getRemotePort() {
+                return 12345;
+            }
+
+            @Override
+            public String getRequestTarget() {
+                return "/";
+            }
+
+            @Override
+            public boolean isSecure() {
+                return false;
+            }
+        };
+
+        HttpWebApplicationRequest request = new HttpWebApplicationRequest(serverRequest);
+        assertEquals(0, lookups.get());
+        assertEquals("local", request.getLocalName());
+        assertEquals("local", request.getServerName());
+        assertEquals("remote", request.getRemoteHost());
+        assertEquals("remote", request.getRemoteHost());
+        assertEquals(2, lookups.get());
     }
 }

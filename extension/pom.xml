@@ -34,7 +34,6 @@
         <module>hibernate-validator</module>
         <module>jaxb</module>
         <module>jersey</module>
-        <module>jstl</module>
         <module>micro</module>
         <module>microprofile</module>
         <module>mojarra</module>

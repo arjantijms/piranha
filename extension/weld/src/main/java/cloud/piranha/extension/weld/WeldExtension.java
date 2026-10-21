@@ -45,6 +45,7 @@ public class WeldExtension implements WebApplicationExtension {
 
     @Override
     public void configure(WebApplication webApplication) {
+        WeldInitializer.ignoreDiscoveredWeldInitializer(webApplication);
         webApplication.addInitializer(WeldInitializer.class.getName());
     }
 }

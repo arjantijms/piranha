@@ -54,6 +54,7 @@ import cloud.piranha.core.api.SecurityWebResourceCollection;
 import cloud.piranha.core.api.WebApplication;
 import cloud.piranha.core.api.WelcomeFileManager;
 import cloud.piranha.core.impl.DefaultJspConfigDescriptor;
+import cloud.piranha.core.impl.DefaultJspPropertyGroupDescriptor;
 import cloud.piranha.core.impl.DefaultTaglibDescriptor;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.FilterRegistration;
@@ -355,18 +356,38 @@ public class WebXmlProcessor {
      */
     private void processJspConfig(WebApplication webApplication, WebXml webXml) {
         List<WebXmlJspConfigTaglib> taglibs = webXml.getJspConfig().getTaglibs();
-        if (!taglibs.isEmpty()) {
-            JspConfigDescriptor descriptor = webApplication.getJspConfigDescriptor();
-            if (descriptor == null) {
-                descriptor = new DefaultJspConfigDescriptor();
-                webApplication.setJspConfigDescriptor(descriptor);
-            }
-            for (WebXmlJspConfigTaglib taglib : taglibs) {
-                DefaultTaglibDescriptor taglibDescriptor = new DefaultTaglibDescriptor();
-                taglibDescriptor.setTaglibLocation(taglib.getLocation());
-                taglibDescriptor.setTaglibURI(taglib.getUri());
-                descriptor.getTaglibs().add(taglibDescriptor);
-            }
+        List<WebXmlJspConfigPropertyGroup> propertyGroups = webXml.getJspConfig().getPropertyGroups();
+        if (taglibs.isEmpty() && propertyGroups.isEmpty()) {
+            return;
+        }
+
+        JspConfigDescriptor descriptor = webApplication.getJspConfigDescriptor();
+        if (descriptor == null) {
+            descriptor = new DefaultJspConfigDescriptor();
+            webApplication.setJspConfigDescriptor(descriptor);
+        }
+        for (WebXmlJspConfigTaglib taglib : taglibs) {
+            DefaultTaglibDescriptor taglibDescriptor = new DefaultTaglibDescriptor();
+            taglibDescriptor.setTaglibLocation(taglib.getLocation());
+            taglibDescriptor.setTaglibURI(taglib.getUri());
+            descriptor.getTaglibs().add(taglibDescriptor);
+        }
+        for (WebXmlJspConfigPropertyGroup propertyGroup : propertyGroups) {
+            DefaultJspPropertyGroupDescriptor propertyGroupDescriptor = new DefaultJspPropertyGroupDescriptor();
+            propertyGroupDescriptor.getUrlPatterns().addAll(propertyGroup.urlPatterns());
+            propertyGroupDescriptor.setElIgnored(propertyGroup.elIgnored());
+            propertyGroupDescriptor.setErrorOnELNotFound(propertyGroup.errorOnELNotFound());
+            propertyGroupDescriptor.setPageEncoding(propertyGroup.pageEncoding());
+            propertyGroupDescriptor.setScriptingInvalid(propertyGroup.scriptingInvalid());
+            propertyGroupDescriptor.setIsXml(propertyGroup.isXml());
+            propertyGroupDescriptor.getIncludePreludes().addAll(propertyGroup.includePreludes());
+            propertyGroupDescriptor.getIncludeCodas().addAll(propertyGroup.includeCodas());
+            propertyGroupDescriptor.setDeferredSyntaxAllowedAsLiteral(propertyGroup.deferredSyntaxAllowedAsLiteral());
+            propertyGroupDescriptor.setTrimDirectiveWhitespaces(propertyGroup.trimDirectiveWhitespaces());
+            propertyGroupDescriptor.setDefaultContentType(propertyGroup.defaultContentType());
+            propertyGroupDescriptor.setBuffer(propertyGroup.buffer());
+            propertyGroupDescriptor.setErrorOnUndeclaredNamespace(propertyGroup.errorOnUndeclaredNamespace());
+            descriptor.getJspPropertyGroups().add(propertyGroupDescriptor);
         }
     }
 

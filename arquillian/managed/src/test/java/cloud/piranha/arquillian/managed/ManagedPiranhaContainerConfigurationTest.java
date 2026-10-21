@@ -92,6 +92,27 @@ class ManagedPiranhaContainerConfigurationTest {
     }
 
     @Test
+    void testGetHttpServerClass() {
+        ManagedPiranhaContainerConfiguration config = new ManagedPiranhaContainerConfiguration();
+        assertEquals("", config.getHttpServerClass());
+    }
+
+    @Test
+    void testGetHttpServerClassSet() {
+        System.setProperty("piranha.httpServerClass", "cloud.piranha.http.grizzly.GrizzlyHttpServer");
+        ManagedPiranhaContainerConfiguration config = new ManagedPiranhaContainerConfiguration();
+        assertEquals("cloud.piranha.http.grizzly.GrizzlyHttpServer", config.getHttpServerClass());
+        System.clearProperty("piranha.httpServerClass");
+    }
+
+    @Test
+    void testSetHttpServerClass() {
+        ManagedPiranhaContainerConfiguration config = new ManagedPiranhaContainerConfiguration();
+        config.setHttpServerClass("cloud.piranha.http.netty.NettyHttpServer");
+        assertEquals("cloud.piranha.http.netty.NettyHttpServer", config.getHttpServerClass());
+    }
+
+    @Test
     void testGetJvmArguments() {
         ManagedPiranhaContainerConfiguration config = new ManagedPiranhaContainerConfiguration();
         assertEquals("", config.getJvmArguments());

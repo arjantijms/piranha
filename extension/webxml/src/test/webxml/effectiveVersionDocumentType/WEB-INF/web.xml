@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    A Servlet 2.3 web.xml, which declares its version with a DOCTYPE. The DTD's system ID is a port nothing listens on,
+    so parsing fails if it's loaded.
+-->
+<!DOCTYPE web-app PUBLIC "-//Sun Microsystems, Inc.//DTD Web Application 2.3//EN" "http://localhost:1/web-app_2_3.dtd">
+
+<web-app>
+    <context-param>
+        <param-name>name</param-name>
+        <param-value>value</param-value>
+    </context-param>
+</web-app>

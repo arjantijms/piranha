@@ -27,9 +27,16 @@
  */
 package cloud.piranha.extension.wasp;
 
+import cloud.piranha.core.impl.DefaultJspConfigDescriptor;
+import cloud.piranha.core.impl.DefaultJspPropertyGroupDescriptor;
 import cloud.piranha.core.impl.DefaultWebApplication;
 import cloud.piranha.resource.impl.DirectoryResource;
+import jakarta.servlet.ServletRegistration;
+import jakarta.servlet.http.HttpServlet;
 import java.io.File;
+import java.util.Set;
+import static cloud.piranha.extension.wasp.WaspInitializer.INIT_PARAMETER_PROPERTY_PREFIX;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
@@ -52,5 +59,91 @@ class WaspInitializerTest {
         webApp.addInitializer(new WaspInitializer());
         webApp.initialize();
         assertTrue(webApp.isInitialized());
+    }
+
+    /**
+     * Test that onStartup maps the JSP servlet to JSP pages and JSP documents.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testOnStartupMapsJspPagesAndDocuments() throws Exception {
+        DefaultWebApplication webApp = new DefaultWebApplication();
+        webApp.addResource(new DirectoryResource(new File("src/test/webapp/waspinitializer")));
+        webApp.addInitializer(new WaspInitializer());
+        webApp.initialize();
+        assertEquals(Set.of("*.jsp", "*.jspx"), Set.copyOf(webApp.getServletRegistration("jsp").getMappings()));
+    }
+
+    /**
+     * Test that onStartup maps the JSP servlet to the URL patterns of the JSP property groups too.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testOnStartupMapsJspPropertyGroups() throws Exception {
+        DefaultJspPropertyGroupDescriptor jspPropertyGroup = new DefaultJspPropertyGroupDescriptor();
+        jspPropertyGroup.getUrlPatterns().add("*.xsp");
+        jspPropertyGroup.getUrlPatterns().add("*.jsp");
+        DefaultJspConfigDescriptor jspConfigDescriptor = new DefaultJspConfigDescriptor();
+        jspConfigDescriptor.getJspPropertyGroups().add(jspPropertyGroup);
+
+        DefaultWebApplication webApp = new DefaultWebApplication();
+        webApp.addResource(new DirectoryResource(new File("src/test/webapp/waspinitializer")));
+        webApp.setJspConfigDescriptor(jspConfigDescriptor);
+        webApp.addInitializer(new WaspInitializer());
+        webApp.initialize();
+        assertEquals(Set.of("*.jsp", "*.jspx", "*.xsp"), Set.copyOf(webApp.getServletRegistration("jsp").getMappings()));
+    }
+
+    /**
+     * Test that onStartup leaves *.jspx to a servlet of the application that's mapped to it, without that keeping the
+     * JSP servlet from its other mappings, and that a JSP property group takes precedence over a servlet mapping with
+     * the same URL pattern.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testOnStartupWithApplicationServletMappings() throws Exception {
+        DefaultJspPropertyGroupDescriptor jspPropertyGroup = new DefaultJspPropertyGroupDescriptor();
+        jspPropertyGroup.getUrlPatterns().add("/identical.jsp");
+        jspPropertyGroup.getUrlPatterns().add("/group/*");
+        DefaultJspConfigDescriptor jspConfigDescriptor = new DefaultJspConfigDescriptor();
+        jspConfigDescriptor.getJspPropertyGroups().add(jspPropertyGroup);
+
+        DefaultWebApplication webApp = new DefaultWebApplication();
+        webApp.addResource(new DirectoryResource(new File("src/test/webapp/waspinitializer")));
+        webApp.setJspConfigDescriptor(jspConfigDescriptor);
+        webApp.addInitializer((classes, servletContext)
+                -> servletContext.addServlet("application", new HttpServlet() {}).addMapping("*.jspx", "/identical.jsp"));
+        webApp.addInitializer(new WaspInitializer());
+        webApp.initialize();
+        assertEquals(Set.of("*.jsp", "/identical.jsp", "/group/*"), Set.copyOf(webApp.getServletRegistration("jsp").getMappings()));
+        assertEquals(Set.of("*.jspx"), Set.copyOf(webApp.getServletRegistration("application").getMappings()));
+    }
+
+    /**
+     * Test that system properties set init parameters of the JSP servlet, taking precedence over those onStartup sets
+     * itself.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testOnStartupWithInitParameterSystemProperties() throws Exception {
+        System.setProperty(INIT_PARAMETER_PROPERTY_PREFIX + "development", "false");
+        System.setProperty(INIT_PARAMETER_PROPERTY_PREFIX + "compilerSourceVM", "17");
+        try {
+            DefaultWebApplication webApp = new DefaultWebApplication();
+            webApp.addResource(new DirectoryResource(new File("src/test/webapp/waspinitializer")));
+            webApp.addInitializer(new WaspInitializer());
+            webApp.initialize();
+            ServletRegistration registration = webApp.getServletRegistration("jsp");
+            assertEquals("false", registration.getInitParameter("development"));
+            assertEquals("17", registration.getInitParameter("compilerSourceVM"));
+            assertEquals("1.8", registration.getInitParameter("compilerTargetVM"));
+        } finally {
+            System.clearProperty(INIT_PARAMETER_PROPERTY_PREFIX + "development");
+            System.clearProperty(INIT_PARAMETER_PROPERTY_PREFIX + "compilerSourceVM");
+        }
     }
 }

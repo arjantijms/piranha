@@ -41,7 +41,12 @@ public class WebXmlJspConfig {
      * Stores the list of taglib.
      */
     private List<WebXmlJspConfigTaglib> taglibs = new ArrayList<>();
-    
+
+    /**
+     * Stores the list of jsp-property-group.
+     */
+    private List<WebXmlJspConfigPropertyGroup> propertyGroups = new ArrayList<>();
+
     /**
      * Default constructor.
      */
@@ -50,10 +55,19 @@ public class WebXmlJspConfig {
 
     /**
      * Get the list of taglib.
-     * 
+     *
      * @return the list.
      */
     public List<WebXmlJspConfigTaglib> getTaglibs() {
         return taglibs;
+    }
+
+    /**
+     * Get the list of jsp-property-group.
+     *
+     * @return the list.
+     */
+    public List<WebXmlJspConfigPropertyGroup> getPropertyGroups() {
+        return propertyGroups;
     }
 }

@@ -42,7 +42,6 @@ import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -86,6 +85,7 @@ class IntegrationIT {
                 .addAsWebInfResource(new File("src/main/webapp/WEB-INF/web.xml"))
                 .addAsWebResource(new File("src/main/webapp/expression.jsp"))
                 .addAsWebResource(new File("src/main/webapp/faces.xhtml"))
+                .addAsWebResource(new File("src/main/webapp/jstl.jsp"))
                 .addAsWebResource(new File("src/main/webapp/pages.jsp"));
     }
 
@@ -99,7 +99,7 @@ class IntegrationIT {
     void testDependencyInjection() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest
-                .newBuilder(new URI(baseUrl + "/rest/dependencyInjection"))
+                .newBuilder(new URI(baseUrl + "rest/dependencyInjection"))
                 .build();
         HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
         assertTrue(response.body().contains("Dependency Injection works!"));
@@ -115,7 +115,7 @@ class IntegrationIT {
     void testExpressionLanguage() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest
-                .newBuilder(new URI(baseUrl + "/expression.jsp"))
+                .newBuilder(new URI(baseUrl + "expression.jsp"))
                 .build();
         HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
         assertTrue(response.body().contains("Expression Language works!"));
@@ -147,7 +147,7 @@ class IntegrationIT {
     void testInterceptor() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest
-                .newBuilder(new URI(baseUrl + "/rest/intercept"))
+                .newBuilder(new URI(baseUrl + "rest/intercept"))
                 .build();
         HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
         assertTrue(response.body().contains("Interceptor works!"));
@@ -163,7 +163,7 @@ class IntegrationIT {
     void testJsonBinding() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest
-                .newBuilder(new URI(baseUrl + "/rest/jsonb"))
+                .newBuilder(new URI(baseUrl + "rest/jsonb"))
                 .build();
         HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
         assertTrue(response.body().contains("{\"string\":\"JSON Binding works!\"}"));
@@ -179,7 +179,7 @@ class IntegrationIT {
     void testJsonProcessing() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest
-                .newBuilder(new URI(baseUrl + "/rest/jsonp"))
+                .newBuilder(new URI(baseUrl + "rest/jsonp"))
                 .POST(HttpRequest.BodyPublishers.ofString("\"JSON Processing works!\""))
                 .build();
         HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
@@ -191,12 +191,12 @@ class IntegrationIT {
      *
      * @throws Exception when a serious error occurs.
      */
-    @Disabled
     @Test
+    @RunAsClient
     void testJstl() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest
-                .newBuilder(new URI(baseUrl + "/jstl.jsp"))
+                .newBuilder(new URI(baseUrl + "jstl.jsp"))
                 .build();
         HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
         System.out.println(response.body());
@@ -214,7 +214,7 @@ class IntegrationIT {
     void testPages() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest
-                .newBuilder(new URI(baseUrl + "/pages.jsp"))
+                .newBuilder(new URI(baseUrl + "pages.jsp"))
                 .build();
         HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
         assertTrue(response.body().contains("Pages works!"));
@@ -230,7 +230,7 @@ class IntegrationIT {
     void testServlet() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest
-                .newBuilder(new URI(baseUrl + "/integrationServlet"))
+                .newBuilder(new URI(baseUrl + "integrationServlet"))
                 .build();
         HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
         assertTrue(response.body().contains("Servlet works!"));
@@ -246,7 +246,7 @@ class IntegrationIT {
     void testREST() throws Exception {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest
-                .newBuilder(new URI(baseUrl + "/rest/rest"))
+                .newBuilder(new URI(baseUrl + "rest/rest"))
                 .build();
         HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
         assertTrue(response.body().contains("REST works!"));

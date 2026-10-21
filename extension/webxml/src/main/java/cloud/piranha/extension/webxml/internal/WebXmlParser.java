@@ -35,6 +35,7 @@ import static javax.xml.xpath.XPathConstants.NODE;
 import static javax.xml.xpath.XPathConstants.NODESET;
 
 import java.io.InputStream;
+import java.io.StringReader;
 import java.lang.System.Logger;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -51,9 +52,11 @@ import javax.xml.xpath.XPathException;
 import javax.xml.xpath.XPathFactory;
 
 import org.w3c.dom.Document;
+import org.w3c.dom.DocumentType;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
 
 
 /**
@@ -103,6 +106,9 @@ public class WebXmlParser {
         WebXml webXml = new WebXml();
         try {
             DocumentBuilder documentBuilder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+            // Don't load external DTDs, such as the one of a web.xml of Servlet 2.3 or before: parsing would need the
+            // network, and the DOCTYPE itself gives the version
+            documentBuilder.setEntityResolver((publicId, systemId) -> new InputSource(new StringReader("")));
             Document document = documentBuilder.parse(inputStream);
             XPath xPath = XPathFactory.newInstance().newXPath();
             parseAbsoluteOrdering(webXml, xPath, document);
@@ -128,6 +134,7 @@ public class WebXmlParser {
             parseServlets(webXml, xPath, document);
             parseSessionConfig(webXml, xPath, document);
             parseWebApp(webXml, xPath, document);
+            parseDocumentType(webXml, document);
             parseWelcomeFiles(webXml, xPath, document);
             parseDataSources(webXml, xPath, document);
             parseJspConfig(webXml, xPath, document);
@@ -431,6 +438,7 @@ public class WebXmlParser {
     private void parseJspConfig(WebXml webXml, XPath xPath, Document node)
             throws XPathException {
         parseJspConfigTaglibs(webXml, xPath, node);
+        parseJspConfigPropertyGroups(webXml, xPath, node);
     }
 
     /**
@@ -442,13 +450,45 @@ public class WebXmlParser {
      */
     private void parseJspConfigTaglibs(WebXml webXml, XPath xPath, Document node)
             throws XPathException {
-        NodeList nodeList = (NodeList) xPath.evaluate("//jsp-config", node, NODESET);
+        NodeList nodeList = (NodeList) xPath.evaluate("//jsp-config/taglib", node, NODESET);
         if (nodeList != null) {
             List<WebXmlJspConfigTaglib> taglibs = webXml.getJspConfig().getTaglibs();
             for (int i = 0; i < nodeList.getLength(); i++) {
-                String location = parseString(xPath, "taglib/taglib-location/text()", nodeList.item(i));
-                String uri = parseString(xPath, "taglib/taglib-uri/text()", nodeList.item(i));
+                String location = parseString(xPath, "taglib-location/text()", nodeList.item(i));
+                String uri = parseString(xPath, "taglib-uri/text()", nodeList.item(i));
                 taglibs.add(new WebXmlJspConfigTaglib(location, uri));
+            }
+        }
+    }
+
+    /**
+     * Parse the jsp-config / jsp-property-group elements.
+     *
+     * @param webXml the webXml.
+     * @param xPath the XPath.
+     * @param node the DOM node.
+     */
+    private void parseJspConfigPropertyGroups(WebXml webXml, XPath xPath, Document node)
+            throws XPathException {
+        NodeList nodeList = (NodeList) xPath.evaluate("//jsp-config/jsp-property-group", node, NODESET);
+        if (nodeList != null) {
+            List<WebXmlJspConfigPropertyGroup> propertyGroups = webXml.getJspConfig().getPropertyGroups();
+            for (int i = 0; i < nodeList.getLength(); i++) {
+                Node propertyGroup = nodeList.item(i);
+                propertyGroups.add(new WebXmlJspConfigPropertyGroup(
+                        parseTrimmedStrings(xPath, URL_PATTERN_TEXT_SELECTOR, propertyGroup),
+                        parseTrimmedString(xPath, "el-ignored/text()", propertyGroup),
+                        parseTrimmedString(xPath, "error-on-el-not-found/text()", propertyGroup),
+                        parseTrimmedString(xPath, "page-encoding/text()", propertyGroup),
+                        parseTrimmedString(xPath, "scripting-invalid/text()", propertyGroup),
+                        parseTrimmedString(xPath, "is-xml/text()", propertyGroup),
+                        parseTrimmedStrings(xPath, "include-prelude/text()", propertyGroup),
+                        parseTrimmedStrings(xPath, "include-coda/text()", propertyGroup),
+                        parseTrimmedString(xPath, "deferred-syntax-allowed-as-literal/text()", propertyGroup),
+                        parseTrimmedString(xPath, "trim-directive-whitespaces/text()", propertyGroup),
+                        parseTrimmedString(xPath, "default-content-type/text()", propertyGroup),
+                        parseTrimmedString(xPath, "buffer/text()", propertyGroup),
+                        parseTrimmedString(xPath, "error-on-undeclared-namespace/text()", propertyGroup)));
             }
         }
     }
@@ -817,6 +857,41 @@ public class WebXmlParser {
     }
 
     /**
+     * Parse a string, without leading and trailing whitespace.
+     *
+     * @param xPath the XPath to use.
+     * @param expression the expression.
+     * @param node the node.
+     * @return the string, or null if the expression selects nothing or only whitespace.
+     * @throws XPathException when the expression was invalid.
+     */
+    private String parseTrimmedString(XPath xPath, String expression, Node node)
+            throws XPathException {
+
+        String string = parseString(xPath, expression, node).trim();
+        return string.isEmpty() ? null : string;
+    }
+
+    /**
+     * Parse strings, each without leading and trailing whitespace.
+     *
+     * @param xPath the XPath to use.
+     * @param expression the expression.
+     * @param node the node.
+     * @return the strings.
+     * @throws XPathException when the expression was invalid.
+     */
+    private List<String> parseTrimmedStrings(XPath xPath, String expression, Node node)
+            throws XPathException {
+
+        List<String> strings = new ArrayList<>();
+        for (String string : parseStrings(xPath, expression, node)) {
+            strings.add(string.trim());
+        }
+        return strings;
+    }
+
+    /**
      * Parse the web-app section.
      *
      * @param webXml the web.xml to add to.
@@ -847,6 +922,29 @@ public class WebXmlParser {
                     webXml.setMetadataComplete(Boolean.parseBoolean(metadataCompleteNode.getTextContent()));
                 }
             }
+        }
+    }
+
+    /**
+     * Parse the version of a web.xml that declares it with a DOCTYPE instead of a version attribute, as those of
+     * Servlet 2.3 and before do.
+     *
+     * @param webXml the web.xml to add to.
+     * @param document the document.
+     */
+    private void parseDocumentType(WebXml webXml, Document document) {
+        DocumentType documentType = document.getDoctype();
+        if (webXml.getMajorVersion() != -1 || documentType == null) {
+            return;
+        }
+
+        String publicId = documentType.getPublicId();
+        if ("-//Sun Microsystems, Inc.//DTD Web Application 2.3//EN".equals(publicId)) {
+            webXml.setMajorVersion(2);
+            webXml.setMinorVersion(3);
+        } else if ("-//Sun Microsystems, Inc.//DTD Web Application 2.2//EN".equals(publicId)) {
+            webXml.setMajorVersion(2);
+            webXml.setMinorVersion(2);
         }
     }
 

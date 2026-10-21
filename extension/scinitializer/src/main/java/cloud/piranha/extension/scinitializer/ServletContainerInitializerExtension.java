@@ -32,6 +32,7 @@ import static java.lang.System.Logger.Level.TRACE;
 import static java.util.Collections.emptyList;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.ServiceLoader;
 import java.lang.System.Logger;
@@ -50,7 +51,9 @@ import cloud.piranha.core.api.WebApplicationExtension;
 public class ServletContainerInitializerExtension implements WebApplicationExtension {
 
     /**
-     * Stores the ignore initializers property.
+     * Stores the ignore initializers property: a comma separated list of the class names of the initializers that
+     * aren't added. It's read as a system property, and as a Servlet context attribute (a collection of class names,
+     * or a comma separated string) that extensions configured before this one can set.
      */
     public static final String IGNORE_INITIALIZERS_PROPERTY
             = ServletContainerInitializerExtension.class.getName() + ".ignoreInitializers";
@@ -108,6 +111,15 @@ public class ServletContainerInitializerExtension implements WebApplicationExten
                     for(int i=0; i<initializers.length; i++) {
                         ignoreInitializers.add(initializers[i]);
                     }
+                }
+            }
+
+            Object ignoredByExtensions = webApplication.getAttribute(IGNORE_INITIALIZERS_PROPERTY);
+            if (ignoredByExtensions instanceof Collection<?> initializers) {
+                initializers.forEach(initializer -> ignoreInitializers.add(initializer.toString().trim()));
+            } else if (ignoredByExtensions instanceof String initializers) {
+                for (String initializer : initializers.split(",")) {
+                    ignoreInitializers.add(initializer.trim());
                 }
             }
             

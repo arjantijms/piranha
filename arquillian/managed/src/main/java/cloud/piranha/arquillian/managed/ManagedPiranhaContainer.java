@@ -464,6 +464,10 @@ public class ManagedPiranhaContainer implements DeployableContainer<ManagedPiran
         }
         commands.add("--http-port");
         commands.add(Integer.toString(httpPort));
+        if (!configuration.getHttpServerClass().isEmpty()) {
+            commands.add("--http-server-class");
+            commands.add(configuration.getHttpServerClass());
+        }
         commands.add("--war-file");
         commands.add(warFile.getName());
         commands.add("--write-pid");

@@ -41,6 +41,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Iterator;
+import java.util.Objects;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -115,6 +116,7 @@ public class DefaultWebApplicationOutputStream extends WebApplicationOutputStrea
             outputStream.flush();
         } else {
             // Always flush remaining data on close
+            writeOutBuffer();
             outputStream.flush();
         }
         closed = true;
@@ -133,6 +135,8 @@ public class DefaultWebApplicationOutputStream extends WebApplicationOutputStrea
         }
         if (!response.isCommitted()) {
             response.flushBuffer();
+        } else {
+            writeOutBuffer();
         }
         outputStream.flush();
     }
@@ -162,7 +166,7 @@ public class DefaultWebApplicationOutputStream extends WebApplicationOutputStrea
         }
         if (!response.isCommitted()) {
             outputStream.write(buffer, 0, index);
-            index = buffer.length;
+            index = 0;
             response.setCommitted(true);
         }
     }
@@ -214,6 +218,7 @@ public class DefaultWebApplicationOutputStream extends WebApplicationOutputStrea
             LOGGER.log(TRACE, "Reset the buffer");
         }
         this.buffer = new byte[buffer.length];
+        this.index = 0;
     }
 
     @Override
@@ -247,6 +252,9 @@ public class DefaultWebApplicationOutputStream extends WebApplicationOutputStrea
     public void setBufferSize(int bufferSize) {
         if (LOGGER.isLoggable(TRACE)) {
             LOGGER.log(TRACE, "Setting buffer size: {0}", bufferSize);
+        }
+        if (index > 0) {
+            throw new IllegalStateException("Cannot set the buffer size as content was already written");
         }
         this.buffer = new byte[bufferSize];
     }
@@ -283,7 +291,14 @@ public class DefaultWebApplicationOutputStream extends WebApplicationOutputStrea
 
     @Override
     public void write(int integer) throws IOException {
-        if (writeListener == null) {
+        /*
+         * A closed response ignores what's written to it, e.g. by a servlet after it forwarded the request.
+         */
+        if (closed) {
+            return;
+        }
+
+        if (!isWritingThrough()) {
             /*
              * If the response is in buffer resetting mode, we are going to
              * ignore any writes to the underlying output stream until the
@@ -317,30 +332,12 @@ public class DefaultWebApplicationOutputStream extends WebApplicationOutputStrea
                 return;
             }
 
-            /*
-             * Servlet:SPEC:192.2
-             *
-             * If the integer we are looking at will cause the buffer to
-             * overflow, write out the buffer and then write the integer
-             * directly to the underlying output stream.
-             */
-            if (index == buffer.length - 1) {
-                if (LOGGER.isLoggable(TRACE)) {
-                    LOGGER.log(TRACE, "Buffer is full, flushing");
-                }
-                flushBuffer();
-                outputStream.write(integer);
-            } else if (index == buffer.length) {
+            if (buffer.length == 0) {
                 /*
-                 * Write the integer directly to the underlying output stream as
-                 * the buffer was previously flushed.
+                 * Without a buffer the integer goes out at once, after the
+                 * status line and the headers.
                  */
-                outputStream.write(integer);
-            } else if (index > buffer.length) {
-                /*
-                 * The buffer is full, so we need to write the integer directly
-                 * to the underlying output stream.
-                 */
+                writeOutBuffer();
                 outputStream.write(integer);
             } else {
                 /*
@@ -348,15 +345,110 @@ public class DefaultWebApplicationOutputStream extends WebApplicationOutputStrea
                  */
                 this.buffer[index] = (byte) integer;
                 this.index++;
+
+                /*
+                 * Servlet:SPEC:192.2
+                 *
+                 * A full buffer is written out at once, the first time
+                 * together with the status line and the headers.
+                 */
+                if (index == buffer.length) {
+                    writeOutBuffer();
+                }
             }
             previousByte = integer;
         } else {
             /*
-             * WriteListener is set so write directly to output stream.
+             * WriteListener is set, or the connection was upgraded, so write
+             * directly to output stream.
              */
             outputStream.write(integer);
             previousByte = integer;
         }
+    }
+
+    /**
+     * Write the bytes.
+     *
+     * <p>
+     * The bytes are copied into the buffer at once instead of one by one,
+     * unless they're written through, the response is resetting its buffer or
+     * it's for Server-Sent Events.
+     * </p>
+     *
+     * @param bytes the bytes.
+     * @param offset the offset of the first byte to write.
+     * @param length the number of bytes to write.
+     * @throws IOException when an I/O error occurs.
+     */
+    @Override
+    public void write(byte[] bytes, int offset, int length) throws IOException {
+        Objects.checkFromIndexSize(offset, length, bytes.length);
+        if (closed || length == 0) {
+            return;
+        }
+        if (isWritingThrough()) {
+            outputStream.write(bytes, offset, length);
+            previousByte = bytes[offset + length - 1];
+            return;
+        }
+        if (response.isBufferResetting() || buffer.length == 0 || isServerSentEvents()) {
+            for (int i = offset; i < offset + length; i++) {
+                write(bytes[i]);
+            }
+            return;
+        }
+        int end = offset + length;
+        while (offset < end) {
+            int count = Math.min(end - offset, buffer.length - index);
+            System.arraycopy(bytes, offset, buffer, index, count);
+            index += count;
+            offset += count;
+
+            /*
+             * Servlet:SPEC:192.2
+             */
+            if (index == buffer.length) {
+                writeOutBuffer();
+            }
+        }
+        previousByte = bytes[end - 1];
+    }
+
+    /**
+     * Write out the buffer.
+     *
+     * <p>
+     * The first time this flushes the buffer, which writes out the status line
+     * and the headers before it and commits the response. After that it writes
+     * what the buffer holds to the underlying output stream.
+     * </p>
+     *
+     * @throws IOException when an I/O error occurs.
+     */
+    private void writeOutBuffer() throws IOException {
+        if (!response.isCommitted()) {
+            if (LOGGER.isLoggable(TRACE)) {
+                LOGGER.log(TRACE, "Buffer is full, flushing");
+            }
+            flushBuffer();
+        } else if (index > 0) {
+            outputStream.write(buffer, 0, index);
+            index = 0;
+        }
+    }
+
+    /**
+     * Check whether what's written goes to the underlying output stream at
+     * once: when there's a write listener, and on a connection upgraded from
+     * HTTP once its response is committed, as the protocol handler can expect
+     * what it writes to go out without flushing.
+     *
+     * @return true if it does, false otherwise.
+     */
+    private boolean isWritingThrough() {
+        return writeListener != null
+                || (response.isCommitted() && response.getStatus() == SC_SWITCHING_PROTOCOLS);
     }
 
     /**

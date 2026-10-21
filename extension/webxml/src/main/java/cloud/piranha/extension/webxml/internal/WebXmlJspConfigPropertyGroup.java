@@ -25,14 +25,44 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+package cloud.piranha.extension.webxml.internal;
+
+import java.util.List;
 
 /**
- * This module integrates JSTL into Piranha.
- * 
- * @author Manfred Riem (mriem@manorrock.com)
+ * A jsp-property-group inside jsp-config of web.xml/web-fragment.xml.
+ *
+ * <p>
+ * Each value is the text of the element of the same name, or null when that element is absent.
+ *
+ * @param urlPatterns the URL patterns.
+ * @param elIgnored the el-ignored value.
+ * @param errorOnELNotFound the error-on-el-not-found value.
+ * @param pageEncoding the page-encoding value.
+ * @param scriptingInvalid the scripting-invalid value.
+ * @param isXml the is-xml value.
+ * @param includePreludes the include-prelude values.
+ * @param includeCodas the include-coda values.
+ * @param deferredSyntaxAllowedAsLiteral the deferred-syntax-allowed-as-literal value.
+ * @param trimDirectiveWhitespaces the trim-directive-whitespaces value.
+ * @param defaultContentType the default-content-type value.
+ * @param buffer the buffer value.
+ * @param errorOnUndeclaredNamespace the error-on-undeclared-namespace value.
+ * @author Arjan Tijms
  */
-module cloud.piranha.extension.jstl {
-    
-    requires cloud.piranha.core.api;
-    requires static cloud.piranha.extension.scinitializer;
+public record WebXmlJspConfigPropertyGroup(
+        List<String> urlPatterns,
+        String elIgnored,
+        String errorOnELNotFound,
+        String pageEncoding,
+        String scriptingInvalid,
+        String isXml,
+        List<String> includePreludes,
+        List<String> includeCodas,
+        String deferredSyntaxAllowedAsLiteral,
+        String trimDirectiveWhitespaces,
+        String defaultContentType,
+        String buffer,
+        String errorOnUndeclaredNamespace) {
+
 }

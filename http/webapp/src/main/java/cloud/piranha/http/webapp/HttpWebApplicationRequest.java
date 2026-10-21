@@ -71,15 +71,15 @@ public class HttpWebApplicationRequest extends DefaultWebApplicationRequest {
             contextPath = serverRequest.getRequestTarget();
         }
         
+        // The local name, the remote host and the server name are looked up when they're asked for, as each can take
+        // a reverse DNS lookup. The server name is the local name, not the default the request has.
+        serverName = null;
         localAddress = serverRequest.getLocalAddress();
-        localName = serverRequest.getLocalHostname();
         localPort = serverRequest.getLocalPort();
         method = serverRequest.getMethod();
         protocol = serverRequest.getProtocol();
         remoteAddr = serverRequest.getRemoteAddress();
-        remoteHost = serverRequest.getRemoteHostname();
         remotePort = serverRequest.getRemotePort();
-        serverName = serverRequest.getLocalHostname();
         serverPort = serverRequest.getLocalPort();
         webApplicationInputStream = new DefaultWebApplicationInputStream();
         webApplicationInputStream.setWebApplicationRequest(this);
@@ -145,5 +145,29 @@ public class HttpWebApplicationRequest extends DefaultWebApplicationRequest {
                 }
             }
         }
+    }
+
+    @Override
+    public String getLocalName() {
+        if (localName == null) {
+            localName = wrapped.getLocalHostname();
+        }
+        return localName;
+    }
+
+    @Override
+    public String getRemoteHost() {
+        if (remoteHost == null) {
+            remoteHost = wrapped.getRemoteHostname();
+        }
+        return remoteHost;
+    }
+
+    @Override
+    public String getServerName() {
+        if (serverName == null) {
+            serverName = getLocalName();
+        }
+        return serverName;
     }
 }

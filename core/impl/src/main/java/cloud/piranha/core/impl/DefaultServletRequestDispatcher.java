@@ -27,6 +27,7 @@
  */
 package cloud.piranha.core.impl;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
@@ -40,10 +41,12 @@ import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.lang.System.Logger;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -60,6 +63,7 @@ import static jakarta.servlet.AsyncContext.ASYNC_PATH_INFO;
 import static jakarta.servlet.AsyncContext.ASYNC_QUERY_STRING;
 import static jakarta.servlet.AsyncContext.ASYNC_REQUEST_URI;
 import static jakarta.servlet.AsyncContext.ASYNC_SERVLET_PATH;
+import static java.lang.System.Logger.Level.DEBUG;
 import static jakarta.servlet.DispatcherType.ASYNC;
 import static jakarta.servlet.DispatcherType.ERROR;
 import static jakarta.servlet.DispatcherType.FORWARD;
@@ -80,6 +84,11 @@ public class DefaultServletRequestDispatcher implements RequestDispatcher {
     static final String PREVIOUS_REQUEST = "piranha.previous.request";
 
     /**
+     * Stores the logger.
+     */
+    private static final Logger LOGGER = System.getLogger(DefaultServletRequestDispatcher.class.getName());
+
+    /**
      * Stores the async attributes.
      */
     private static final List<String> ASYNC_ATTRIBUTES = Arrays.asList(
@@ -88,6 +97,17 @@ public class DefaultServletRequestDispatcher implements RequestDispatcher {
             ASYNC_QUERY_STRING,
             ASYNC_REQUEST_URI,
             ASYNC_SERVLET_PATH);
+
+    /**
+     * Stores the include attributes.
+     */
+    private static final List<String> INCLUDE_ATTRIBUTES = Arrays.asList(
+            INCLUDE_CONTEXT_PATH,
+            INCLUDE_MAPPING,
+            INCLUDE_PATH_INFO,
+            INCLUDE_QUERY_STRING,
+            INCLUDE_REQUEST_URI,
+            INCLUDE_SERVLET_PATH);
 
     /**
      * Stores the servlet invocation.
@@ -272,27 +292,41 @@ public class DefaultServletRequestDispatcher implements RequestDispatcher {
          */
         WebApplicationRequest request = unwrap(servletRequest, WebApplicationRequest.class);
 
+        /*
+         * During an include, the request keeps its path elements and query string: the included servlet gets those of
+         * the include from the include attributes, which a named dispatcher doesn't set. After the include, the request
+         * gets back what it had before it: also the include attributes of an include it's in, and what a forward from
+         * the included servlet changes.
+         */
+        DispatcherType dispatcherType = request.getDispatcherType();
+        String servletPath = request.getServletPath();
+        String pathInfo = request.getPathInfo();
+        String queryString = request.getQueryString();
+        String originalServletPath = request instanceof DefaultWebApplicationRequest defaultRequest ? defaultRequest.getOriginalServletPath() : null;
+        Map<String, Object> includeAttributes = getAttributes(request, INCLUDE_ATTRIBUTES);
+
+        String includeQueryString = path == null ? null : getQueryString(path);
+        Map<String, String[]> parameters = includeQueryString == null ? null : copyParameters(request);
+
         /**
          * Set the include attributes.
          */
-        request.setAttribute(INCLUDE_CONTEXT_PATH, request.getContextPath());
-        request.setAttribute(INCLUDE_PATH_INFO, request.getPathInfo());
-        request.setAttribute(INCLUDE_QUERY_STRING, request.getQueryString());
-        request.setAttribute(INCLUDE_REQUEST_URI, request.getRequestURI());
-        request.setAttribute(INCLUDE_SERVLET_PATH, request.getServletPath());
+        if (path != null) {
+            request.setAttribute(INCLUDE_REQUEST_URI, request.getContextPath() + getServletPath(path));
+            request.setAttribute(INCLUDE_CONTEXT_PATH, request.getContextPath());
+            request.setAttribute(INCLUDE_SERVLET_PATH, servletInvocation.getServletPath());
+            setOrRemoveAttribute(request, INCLUDE_PATH_INFO, servletInvocation.getPathInfo());
+            setOrRemoveAttribute(request, INCLUDE_QUERY_STRING, includeQueryString);
+            request.setAttribute(INCLUDE_MAPPING, servletInvocation.getHttpServletMapping());
+        }
 
         /**
          * Set the new dispatcher type.
          */
         request.setDispatcherType(INCLUDE);
-        request.setServletPath(path == null ? "/" + servletEnvironment.getServletName() : getServletPath(path));
-        request.setPathInfo(null);
 
-        if (path != null) {
-            request.setQueryString(getQueryString(path));
-        }
-
-        invocationFinder.addFilters(INCLUDE, servletInvocation, request.getServletPath(), "");
+        invocationFinder.addFilters(INCLUDE, servletInvocation,
+                path == null ? "/" + servletEnvironment.getServletName() : getServletPath(path), "");
 
         if (servletInvocation.getServletEnvironment() != null) {
             request.setAsyncSupported(request.isAsyncSupported() && isAsyncSupportedInChain());
@@ -302,27 +336,8 @@ public class DefaultServletRequestDispatcher implements RequestDispatcher {
          * Aggregate the request parameters with giving the new parameter values
          * precedence over the old ones.
          */
-        if (request.getQueryString() != null) {
-            String queryString = request.getQueryString();
-            Map<String, String[]> parameters = request.getModifiableParameterMap();
-            for (String param : queryString.split("&")) {
-                String[] pair = param.split("=");
-                String key = URLDecoder.decode(pair[0], StandardCharsets.UTF_8);
-                String value = "";
-                if (pair.length > 1) {
-                    value = URLDecoder.decode(pair[1], StandardCharsets.UTF_8);
-                }
-                String[] values = parameters.get(key);
-                if (values == null) {
-                    values = new String[]{value};
-                    parameters.put(key, values);
-                } else {
-                    String[] newValues = new String[values.length + 1];
-                    System.arraycopy(values, 0, newValues, 1, values.length);
-                    newValues[0] = value;
-                    parameters.put(key, newValues);
-                }
-            }
+        if (includeQueryString != null) {
+            aggregateParameters(request, includeQueryString);
         }
 
         /*
@@ -335,20 +350,18 @@ public class DefaultServletRequestDispatcher implements RequestDispatcher {
         } catch (Exception e) {
             rethrow(e);
         } finally {
-            /*
-             * Set servlet path and path info back to original values.
-             */
-            request.setServletPath((String) request.getAttribute(INCLUDE_SERVLET_PATH));
-            request.setPathInfo((String) request.getAttribute(INCLUDE_PATH_INFO));
-
-            /*
-             * Remove include attributes.
-             */
-            request.removeAttribute(INCLUDE_CONTEXT_PATH);
-            request.removeAttribute(INCLUDE_PATH_INFO);
-            request.removeAttribute(INCLUDE_QUERY_STRING);
-            request.removeAttribute(INCLUDE_REQUEST_URI);
-            request.removeAttribute(INCLUDE_SERVLET_PATH);
+            request.setDispatcherType(dispatcherType);
+            request.setServletPath(servletPath);
+            request.setPathInfo(pathInfo);
+            request.setQueryString(queryString);
+            if (request instanceof DefaultWebApplicationRequest defaultRequest) {
+                defaultRequest.setOriginalServletPath(originalServletPath);
+            }
+            includeAttributes.forEach((name, value) -> setOrRemoveAttribute(request, name, value));
+            if (parameters != null) {
+                request.getModifiableParameterMap().clear();
+                request.getModifiableParameterMap().putAll(parameters);
+            }
         }
     }
 
@@ -686,6 +699,79 @@ public class DefaultServletRequestDispatcher implements RequestDispatcher {
         return !path.contains("?") ? null : path.substring(path.indexOf("?") + 1);
     }
 
+    /**
+     * Get the values of attributes of the request.
+     *
+     * @param request the request.
+     * @param names the names of the attributes.
+     * @return the values by name, null for an attribute that isn't set.
+     */
+    private static Map<String, Object> getAttributes(ServletRequest request, List<String> names) {
+        Map<String, Object> attributes = new HashMap<>();
+        for (String name : names) {
+            attributes.put(name, request.getAttribute(name));
+        }
+        return attributes;
+    }
+
+    /**
+     * Set an attribute of the request, or remove it if there's no value.
+     *
+     * @param request the request.
+     * @param name the name of the attribute.
+     * @param value the value, or null.
+     */
+    private static void setOrRemoveAttribute(ServletRequest request, String name, Object value) {
+        if (value != null) {
+            request.setAttribute(name, value);
+        } else if (request.getAttribute(name) != null) {
+            request.removeAttribute(name);
+        }
+    }
+
+    /**
+     * Copy the parameters of the request, after parsing them if that's still to be done.
+     *
+     * @param request the request.
+     * @return the copy.
+     */
+    private static Map<String, String[]> copyParameters(WebApplicationRequest request) {
+        request.getParameterMap();
+        return new HashMap<>(request.getModifiableParameterMap());
+    }
+
+    /**
+     * Add the parameters of the query string of a dispatch to those of the request, giving the new values precedence
+     * over the ones the request has. The request's own parameters must be parsed already.
+     *
+     * @param request the request.
+     * @param queryString the query string of the dispatch.
+     */
+    private static void aggregateParameters(WebApplicationRequest request, String queryString) {
+        Map<String, String[]> parameters = request.getModifiableParameterMap();
+        for (String param : queryString.split("&")) {
+            if (param.isEmpty()) {
+                continue;
+            }
+            String[] pair = param.split("=");
+            String key = URLDecoder.decode(pair[0], StandardCharsets.UTF_8);
+            String value = "";
+            if (pair.length > 1) {
+                value = URLDecoder.decode(pair[1], StandardCharsets.UTF_8);
+            }
+            String[] values = parameters.get(key);
+            if (values == null) {
+                values = new String[]{value};
+                parameters.put(key, values);
+            } else {
+                String[] newValues = new String[values.length + 1];
+                System.arraycopy(values, 0, newValues, 1, values.length);
+                newValues[0] = value;
+                parameters.put(key, newValues);
+            }
+        }
+    }
+
     private HttpServletRequest findHttpServletRequestInChain(ServletRequest request) {
         ServletRequest currentRequest = request;
         while (currentRequest instanceof ServletRequestWrapper wrapper) {
@@ -753,13 +839,24 @@ public class DefaultServletRequestDispatcher implements RequestDispatcher {
         WebApplicationRequest request = unwrap(servletRequest, WebApplicationRequest.class);
 
         /*
-         * Set the forward attributes.
+         * Set the forward attributes, to those of the request from the client: a forward from a forwarded servlet
+         * keeps them.
          */
-        request.setAttribute(FORWARD_CONTEXT_PATH, request.getContextPath());
-        request.setAttribute(FORWARD_PATH_INFO, request.getPathInfo());
-        request.setAttribute(FORWARD_QUERY_STRING, request.getQueryString());
-        request.setAttribute(FORWARD_REQUEST_URI, request.getRequestURI());
-        request.setAttribute(FORWARD_SERVLET_PATH, request.getServletPath());
+        if (request.getAttribute(FORWARD_REQUEST_URI) == null) {
+            request.setAttribute(FORWARD_CONTEXT_PATH, request.getContextPath());
+            request.setAttribute(FORWARD_PATH_INFO, request.getPathInfo());
+            request.setAttribute(FORWARD_QUERY_STRING, request.getQueryString());
+            request.setAttribute(FORWARD_REQUEST_URI, request.getRequestURI());
+            request.setAttribute(FORWARD_SERVLET_PATH, request.getServletPath());
+        }
+
+        /*
+         * Parse the parameters of the request before the query string of the forward replaces its own.
+         */
+        String forwardQueryString = path == null ? null : getQueryString(path);
+        if (forwardQueryString != null) {
+            request.getParameterMap();
+        }
 
         /*
          * Set the new dispatcher type.
@@ -770,41 +867,30 @@ public class DefaultServletRequestDispatcher implements RequestDispatcher {
          * Set the new servlet path and the new query string.
          */
         if (path != null) {
-            request.setServletPath(getServletPath(path));
-            request.setQueryString(getQueryString(path));
+            // The path elements of the forward, which make up the request URI instead of the path the request came in
+            // with. Without a query string of its own, the forward keeps that of the request.
+            request.setServletPath(servletInvocation.getServletPath());
+            request.setPathInfo(servletInvocation.getPathInfo());
+            if (request instanceof DefaultWebApplicationRequest defaultRequest) {
+                defaultRequest.setOriginalServletPath(null);
+            }
+            if (forwardQueryString != null) {
+                request.setQueryString(forwardQueryString);
+            }
         } else {
             request.setServletPath("/" + servletEnvironment.getServletName());
-            request.setQueryString(request.getQueryString());
         }
 
         /*
          * Aggregate the request parameters with giving the new parameter values
          * precedence over the old ones.
          */
-        if (request.getQueryString() != null) {
-            String queryString = request.getQueryString();
-            Map<String, String[]> parameters = request.getModifiableParameterMap();
-            for (String param : queryString.split("&")) {
-                String[] pair = param.split("=");
-                String key = URLDecoder.decode(pair[0], StandardCharsets.UTF_8);
-                String value = "";
-                if (pair.length > 1) {
-                    value = URLDecoder.decode(pair[1], StandardCharsets.UTF_8);
-                }
-                String[] values = parameters.get(key);
-                if (values == null) {
-                    values = new String[]{value};
-                    parameters.put(key, values);
-                } else {
-                    String[] newValues = new String[values.length + 1];
-                    System.arraycopy(values, 0, newValues, 1, values.length);
-                    newValues[0] = value;
-                    parameters.put(key, newValues);
-                }
-            }
+        if (forwardQueryString != null) {
+            aggregateParameters(request, forwardQueryString);
         }
 
-        invocationFinder.addFilters(FORWARD, servletInvocation, request.getServletPath(), "");
+        invocationFinder.addFilters(FORWARD, servletInvocation,
+                path == null ? "/" + servletEnvironment.getServletName() : getServletPath(path), "");
 
         if (servletInvocation.getServletEnvironment() != null) {
             request.setAsyncSupported(request.isAsyncSupported() && isAsyncSupportedInChain());
@@ -821,5 +907,33 @@ public class DefaultServletRequestDispatcher implements RequestDispatcher {
          * Flush the response buffer.
          */
         servletResponse.flushBuffer();
+
+        /*
+         * Unless the forwarded servlet started asynchronous processing, the response is closed now: what the
+         * forwarding servlet still writes is ignored.
+         */
+        if (!servletRequest.isAsyncStarted()) {
+            closeResponse(servletResponse);
+        }
+    }
+
+    /**
+     * Close the response, through its writer or else its output stream: one of these is still to be acquired, or was
+     * acquired already, so the other one can't be.
+     *
+     * @param servletResponse the response.
+     */
+    private static void closeResponse(ServletResponse servletResponse) {
+        try {
+            servletResponse.getWriter().close();
+        } catch (IllegalStateException ise) {
+            try {
+                servletResponse.getOutputStream().close();
+            } catch (IllegalStateException | IOException e) {
+                LOGGER.log(DEBUG, "Unable to close the response after a forward", e);
+            }
+        } catch (IOException ioe) {
+            LOGGER.log(DEBUG, "Unable to close the response after a forward", ioe);
+        }
     }
 }

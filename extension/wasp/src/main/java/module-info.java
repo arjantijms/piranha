@@ -30,6 +30,10 @@
  * This module integrates Eclipse WaSP into Piranha.
  * 
  * <p>
+ *  WaSP implements both Jakarta Pages and Jakarta Tags, so this module also
+ *  provides the Jakarta Tags API.
+ * </p>
+ * <p>
  *  See https://github.com/eclipse-ee4j/wasp for more information about its
  *  project.
  * </p>
@@ -60,5 +64,6 @@ module cloud.piranha.extension.wasp {
     opens cloud.piranha.extension.wasp;
     requires transitive cloud.piranha.core.impl;
     requires jakarta.servlet.jsp;
+    requires jakarta.servlet.jsp.jstl;
     requires transitive org.glassfish.wasp;
 }

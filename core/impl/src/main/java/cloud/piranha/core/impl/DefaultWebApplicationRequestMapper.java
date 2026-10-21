@@ -317,7 +317,10 @@ public class DefaultWebApplicationRequestMapper implements WebApplicationRequest
             String prefix = prefixes.nextElement();
             if (!prefix.startsWith("*.") && prefix.endsWith("/*")) {
                 prefix = prefix.substring(0, prefix.length() - 1);
-                if ((path + "/").startsWith(prefix)) {
+                // A matching prefix that's not longer than the current one doesn't count: the first matching one
+                // found isn't necessarily the longest
+                if ((path + "/").startsWith(prefix)
+                        && (currentPrefix == null || prefix.length() > currentPrefix.getPattern().length())) {
                     result = new DefaultWebApplicationRequestMapping(prefix);
                     // If path is /foo/bar and the initial prefix is /foo/* then the
                     // match value is bar
@@ -325,10 +328,6 @@ public class DefaultWebApplicationRequestMapper implements WebApplicationRequest
                     break;
                 }
             }
-        }
-        if (result != null && currentPrefix != null
-                && result.getPattern().length() <= currentPrefix.getPattern().length()) {
-            result = null;
         }
         return result;
     }

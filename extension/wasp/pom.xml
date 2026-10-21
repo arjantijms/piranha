@@ -11,7 +11,8 @@
     <packaging>jar</packaging>
     <name>Piranha - Extension - WaSP</name>
     <description>
-        The WaSP extension integrates Eclipse WaSP into Piranha.
+        The WaSP extension integrates Eclipse WaSP into Piranha. It provides both the Jakarta Pages API and the
+        Jakarta Tags API, which WaSP implements.
     </description>
     <dependencies>
         <!-- compile -->
@@ -24,6 +25,11 @@
         <dependency>
             <groupId>jakarta.servlet.jsp</groupId>
             <artifactId>jakarta.servlet.jsp-api</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.servlet.jsp.jstl</groupId>
+            <artifactId>jakarta.servlet.jsp.jstl-api</artifactId>
             <scope>compile</scope>
         </dependency>
         <dependency>

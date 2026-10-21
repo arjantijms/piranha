@@ -185,7 +185,10 @@ public class HttpWebApplicationServer implements HttpServerProcessor, WebApplica
             LOGGER.log(TRACE, "Request URI: {0}", requestUri);
         }
 
-        WebApplication webApplication = requestMapper.findMapping(requestUri);
+        // The request URI stays as sent, the path the request is mapped with has no empty segments (Servlet 3.5.2)
+        String path = removeEmptySegments(requestUri);
+
+        WebApplication webApplication = requestMapper.findMapping(path);
         if (webApplication == null) {
             if (LOGGER.isLoggable(TRACE)) {
                 LOGGER.log(TRACE, "No web application found for request URI: {0}", requestUri);
@@ -199,7 +202,7 @@ public class HttpWebApplicationServer implements HttpServerProcessor, WebApplica
             Thread.currentThread().setContextClassLoader(webApplication.getClassLoader());
             String contextPath = webApplication.getContextPath();
             request.setContextPath(contextPath);
-            request.setServletPath(requestUri.substring(contextPath.length()));
+            request.setServletPath(path.substring(contextPath.length()));
             request.setWebApplication(webApplication);
             response.setWebApplication(webApplication);
 
@@ -215,6 +218,28 @@ public class HttpWebApplicationServer implements HttpServerProcessor, WebApplica
         } finally {
             Thread.currentThread().setContextClassLoader(oldClassLoader);
         }
+    }
+
+    /**
+     * Removes the empty segments of the given path, other than the last one, so {@code /a//b//} becomes {@code /a/b/}.
+     *
+     * @param path the path.
+     * @return the path without empty segments.
+     */
+    static String removeEmptySegments(String path) {
+        if (!path.contains("//")) {
+            return path;
+        }
+
+        StringBuilder builder = new StringBuilder(path.length());
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c != '/' || builder.isEmpty() || builder.charAt(builder.length() - 1) != '/') {
+                builder.append(c);
+            }
+        }
+
+        return builder.toString();
     }
 
     @Override

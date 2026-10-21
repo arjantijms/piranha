@@ -35,13 +35,16 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.util.Arrays;
 
 import org.junit.jupiter.api.Test;
 
 import cloud.piranha.core.api.WebApplication;
+import cloud.piranha.resource.impl.DirectoryResource;
 
 import static jakarta.servlet.RequestDispatcher.FORWARD_CONTEXT_PATH;
 import static jakarta.servlet.RequestDispatcher.FORWARD_MAPPING;
@@ -49,6 +52,10 @@ import static jakarta.servlet.RequestDispatcher.FORWARD_PATH_INFO;
 import static jakarta.servlet.RequestDispatcher.FORWARD_QUERY_STRING;
 import static jakarta.servlet.RequestDispatcher.FORWARD_REQUEST_URI;
 import static jakarta.servlet.RequestDispatcher.FORWARD_SERVLET_PATH;
+import static jakarta.servlet.RequestDispatcher.INCLUDE_PATH_INFO;
+import static jakarta.servlet.RequestDispatcher.INCLUDE_QUERY_STRING;
+import static jakarta.servlet.RequestDispatcher.INCLUDE_REQUEST_URI;
+import static jakarta.servlet.RequestDispatcher.INCLUDE_SERVLET_PATH;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -968,5 +975,289 @@ class RequestDispatcherTest {
 
         webApplication.service(request, response);
         assertTrue(new String(byteOutput.toByteArray()).contains("This was included"));
+    }
+
+    /**
+     * Test that an included servlet gets the include attributes of the include, while the path elements and the query
+     * string of the request stay those of the original request, and that the parameters of the include's query string
+     * are only there during the include.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testIncludeAttributesPathElementsAndParameters() throws Exception {
+        WebApplication webApplication = new DefaultWebApplicationBuilder()
+                .servlet("Outer", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        response.getWriter().print("before|");
+                        request.getRequestDispatcher("/inner/info?p=New").include(request, response);
+                        response.getWriter().print("|after:" + request.getServletPath() + "," + request.getQueryString()
+                                + "," + Arrays.toString(request.getParameterValues("p")) + "," + request.getDispatcherType()
+                                + "," + request.getAttribute(INCLUDE_SERVLET_PATH));
+                    }
+                })
+                .servletMapping("Outer", "/outer")
+                .servlet("Inner", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        response.getWriter().print(request.getServletPath() + "," + request.getPathInfo() + ","
+                                + request.getQueryString() + ";"
+                                + request.getAttribute(INCLUDE_REQUEST_URI) + "," + request.getAttribute(INCLUDE_SERVLET_PATH)
+                                + "," + request.getAttribute(INCLUDE_PATH_INFO) + "," + request.getAttribute(INCLUDE_QUERY_STRING)
+                                + ";" + Arrays.toString(request.getParameterValues("p")) + "," + request.getDispatcherType());
+                    }
+                })
+                .servletMapping("Inner", "/inner/*")
+                .build()
+                .initialize()
+                .start();
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath("/outer")
+                .queryString("p=Original")
+                .build();
+
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+
+        webApplication.service(request, response);
+        assertEquals("before|/outer,null,p=Original;/inner/info,/inner,/info,p=New;[New, Original],INCLUDE"
+                + "|after:/outer,p=Original,[Original],REQUEST,null", byteOutput.toString());
+    }
+
+    /**
+     * Test that a nested include replaces the include attributes, and that those of the include it's in are back
+     * after it.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testNestedIncludeAttributes() throws Exception {
+        WebApplication webApplication = new DefaultWebApplicationBuilder()
+                .servlet("Outer", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        request.getRequestDispatcher("/a").include(request, response);
+                    }
+                })
+                .servletMapping("Outer", "/outer")
+                .servlet("A", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        request.getRequestDispatcher("/b").include(request, response);
+                        response.getWriter().print("|a:" + request.getAttribute(INCLUDE_SERVLET_PATH));
+                    }
+                })
+                .servletMapping("A", "/a")
+                .servlet("B", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        response.getWriter().print("b:" + request.getAttribute(INCLUDE_SERVLET_PATH));
+                    }
+                })
+                .servletMapping("B", "/b")
+                .build()
+                .initialize()
+                .start();
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath("/outer")
+                .build();
+
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+
+        webApplication.service(request, response);
+        assertEquals("b:/b|a:/a", byteOutput.toString());
+    }
+
+    /**
+     * Test that a forwarded servlet gets the path elements and the query string of the forward, the forward
+     * attributes of the original request, and the parameters of both, the forward's first.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testForwardPathElementsAttributesAndParameters() throws Exception {
+        WebApplication webApplication = new DefaultWebApplicationBuilder()
+                .servlet("Outer", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        request.getRequestDispatcher("/target/info?p=New").forward(request, response);
+                    }
+                })
+                .servletMapping("Outer", "/outer")
+                .servlet("Target", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        response.getWriter().print(request.getServletPath() + "," + request.getPathInfo() + ","
+                                + request.getRequestURI() + "," + request.getQueryString() + ";"
+                                + request.getAttribute(FORWARD_REQUEST_URI) + "," + request.getAttribute(FORWARD_SERVLET_PATH)
+                                + "," + request.getAttribute(FORWARD_PATH_INFO) + "," + request.getAttribute(FORWARD_QUERY_STRING)
+                                + ";" + Arrays.toString(request.getParameterValues("p")) + "," + request.getDispatcherType());
+                    }
+                })
+                .servletMapping("Target", "/target/*")
+                .build()
+                .initialize()
+                .start();
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath("/outer")
+                .queryString("p=Original")
+                .build();
+
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+
+        webApplication.service(request, response);
+        assertEquals("/target,/info,/target/info,p=New;/outer,/outer,null,p=Original;[New, Original],FORWARD",
+                byteOutput.toString());
+    }
+
+    /**
+     * Test that the forward attributes stay those of the original request when a forwarded servlet forwards again.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testNestedForwardAttributes() throws Exception {
+        WebApplication webApplication = new DefaultWebApplicationBuilder()
+                .servlet("A", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        request.getRequestDispatcher("/b").forward(request, response);
+                    }
+                })
+                .servletMapping("A", "/a")
+                .servlet("B", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        request.getRequestDispatcher("/c").forward(request, response);
+                    }
+                })
+                .servletMapping("B", "/b")
+                .servlet("C", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        response.getWriter().print(request.getServletPath() + ";" + request.getAttribute(FORWARD_SERVLET_PATH));
+                    }
+                })
+                .servletMapping("C", "/c")
+                .build()
+                .initialize()
+                .start();
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath("/a")
+                .build();
+
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+
+        webApplication.service(request, response);
+        assertEquals("/c;/a", byteOutput.toString());
+    }
+
+    /**
+     * Test that what the forwarding servlet writes after a forward is ignored, as the response is closed then.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testForwardClosesResponse() throws Exception {
+        WebApplication webApplication = new DefaultWebApplicationBuilder()
+                .servlet("Outer", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        request.getRequestDispatcher("/target").forward(request, response);
+                        response.getWriter().print("|after");
+                    }
+                })
+                .servletMapping("Outer", "/outer")
+                .servlet("Target", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        response.getWriter().print("target");
+                    }
+                })
+                .servletMapping("Target", "/target")
+                .build()
+                .initialize()
+                .start();
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath("/outer")
+                .build();
+
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+
+        webApplication.service(request, response);
+        assertEquals("target", byteOutput.toString());
+    }
+
+    /**
+     * Test that including a static resource leaves the response open for the including servlet.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testIncludeOfStaticResource() throws Exception {
+        WebApplication webApplication = new DefaultWebApplicationBuilder()
+                .servlet("Outer", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        response.getWriter().print("before|");
+                        request.getRequestDispatcher("/static.txt").include(request, response);
+                        response.getWriter().print("|after");
+                    }
+                })
+                .servletMapping("Outer", "/outer")
+                .build();
+        webApplication.addResource(new DirectoryResource(new File("src/test/webapp/include")));
+        webApplication.initialize();
+        webApplication.start();
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath("/outer")
+                .build();
+
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+
+        webApplication.service(request, response);
+        assertEquals("before|static|after", byteOutput.toString());
     }
 }
