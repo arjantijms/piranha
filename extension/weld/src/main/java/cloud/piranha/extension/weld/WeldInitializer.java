@@ -31,7 +31,11 @@ import jakarta.servlet.ServletContainerInitializer;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
 
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.Set;
+
+import org.jboss.weld.environment.servlet.EnhancedListener;
 
 import cloud.piranha.core.api.WebApplication;
 
@@ -41,6 +45,13 @@ import cloud.piranha.core.api.WebApplication;
  * @author Manfred Riem (mriem@manorrock.com)
  */
 public class WeldInitializer implements ServletContainerInitializer {
+
+    /**
+     * The Servlet context attribute with the initializers the ServletContainerInitializer extension doesn't add
+     * (ServletContainerInitializerExtension.IGNORE_INITIALIZERS_PROPERTY).
+     */
+    private static final String IGNORE_INITIALIZERS_ATTRIBUTE =
+        "cloud.piranha.extension.scinitializer.ServletContainerInitializerExtension.ignoreInitializers";
 
     /**
      * Constructor.
@@ -71,8 +82,31 @@ public class WeldInitializer implements ServletContainerInitializer {
         try {
             webApplication.getManager().setObjectInstanceManager(new WeldObjectInstanceManager());
             servletContext.addListener(weldInitListener);
+
+            // Start Weld now, with Weld's own initializer, so that the initializers after this one (e.g. those of
+            // Soteria, Transact and EclipseLink) can use CDI. Its discovery is suppressed, see
+            // ignoreDiscoveredWeldInitializer.
+            new EnhancedListener().onStartup(classes, servletContext);
         } catch (IllegalStateException e) {
             // CDI not available
         }
+    }
+
+    /**
+     * Keeps the ServletContainerInitializer extension from adding Weld's own initializer, which this initializer
+     * runs itself. Weld's initializer doesn't check whether Weld was already started, so running it twice would
+     * start Weld twice. Called by the extensions that add this initializer, before the ServletContainerInitializer
+     * extension is configured.
+     *
+     * @param webApplication the web application.
+     */
+    public static void ignoreDiscoveredWeldInitializer(WebApplication webApplication) {
+        Set<String> ignored = new LinkedHashSet<>();
+        Object existing = webApplication.getAttribute(IGNORE_INITIALIZERS_ATTRIBUTE);
+        if (existing instanceof Collection<?> initializers) {
+            initializers.forEach(initializer -> ignored.add(initializer.toString()));
+        }
+        ignored.add(EnhancedListener.class.getName());
+        webApplication.setAttribute(IGNORE_INITIALIZERS_ATTRIBUTE, ignored);
     }
 }

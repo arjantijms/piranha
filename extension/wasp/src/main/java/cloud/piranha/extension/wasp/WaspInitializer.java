@@ -28,16 +28,21 @@
 package cloud.piranha.extension.wasp;
 
 import cloud.piranha.core.api.WebApplication;
+import jakarta.servlet.Registration;
 import jakarta.servlet.ServletContainerInitializer;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRegistration;
+import jakarta.servlet.descriptor.JspConfigDescriptor;
+import jakarta.servlet.descriptor.JspPropertyGroupDescriptor;
 import jakarta.servlet.jsp.JspFactory;
 import java.io.File;
 import static java.io.File.pathSeparator;
 import java.lang.System.Logger;
 import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.TRACE;
+import java.util.LinkedHashSet;
+import java.util.Properties;
 import java.util.Set;
 import org.glassfish.wasp.runtime.JspFactoryImpl;
 import org.glassfish.wasp.runtime.TldScanner;
@@ -48,6 +53,12 @@ import org.glassfish.wasp.runtime.TldScanner;
  * @author Manfred Riem (mriem@manorrock.com)
  */
 public class WaspInitializer implements ServletContainerInitializer {
+
+    /**
+     * The prefix of the system properties that set init parameters of the JSP servlet, before the ones this
+     * initializer sets itself, e.g. cloud.piranha.extension.wasp.WaspInitializer.initParameter.development=false.
+     */
+    public static final String INIT_PARAMETER_PROPERTY_PREFIX = "cloud.piranha.extension.wasp.WaspInitializer.initParameter.";
 
     /**
      * Stores the logger.
@@ -79,7 +90,21 @@ public class WaspInitializer implements ServletContainerInitializer {
         
         if (application.getServletRegistration("jsp") == null) {
             ServletRegistration.Dynamic registration = application.addServlet("jsp", "org.glassfish.wasp.servlet.JspServlet");
+
+            // JSP pages and JSP documents, unless the application maps these to a servlet of its own. One at a time,
+            // as addMapping adds none of its patterns if one of them is mapped already.
             registration.addMapping("*.jsp");
+            registration.addMapping("*.jspx");
+
+            // The resources the JSP property groups match are JSP pages too. A property group takes precedence over a
+            // servlet mapping with the same URL pattern.
+            for (String urlPattern : getJspPropertyGroupUrlPatterns(application)) {
+                application.removeServletMapping(urlPattern);
+                registration.addMapping(urlPattern);
+            }
+
+            // First, as setInitParameter doesn't change an init parameter that's set already
+            setInitParametersFromSystemProperties(registration);
             registration.setInitParameter("classpath", getClassPath(application));
             registration.setInitParameter("compilerSourceVM", "1.8");
             registration.setInitParameter("compilerTargetVM", "1.8");
@@ -91,6 +116,41 @@ public class WaspInitializer implements ServletContainerInitializer {
 
         TldScanner scanner = new TldScanner();
         scanner.onStartup(classes, servletContext);
+    }
+
+    /**
+     * Set the init parameters that the system properties with {@link #INIT_PARAMETER_PROPERTY_PREFIX} give: each
+     * one's name is that of the system property without the prefix.
+     *
+     * @param registration the registration of a JSP servlet.
+     */
+    static void setInitParametersFromSystemProperties(Registration registration) {
+        Properties systemProperties = System.getProperties();
+        for (String propertyName : systemProperties.stringPropertyNames()) {
+            if (propertyName.startsWith(INIT_PARAMETER_PROPERTY_PREFIX)) {
+                registration.setInitParameter(
+                        propertyName.substring(INIT_PARAMETER_PROPERTY_PREFIX.length()),
+                        systemProperties.getProperty(propertyName));
+            }
+        }
+    }
+
+    /**
+     * Get the URL patterns of the JSP property groups.
+     *
+     * @param servletContext the servlet context.
+     * @return the URL patterns.
+     */
+    private Set<String> getJspPropertyGroupUrlPatterns(ServletContext servletContext) {
+        Set<String> urlPatterns = new LinkedHashSet<>();
+        JspConfigDescriptor jspConfigDescriptor = servletContext.getJspConfigDescriptor();
+        if (jspConfigDescriptor != null) {
+            for (JspPropertyGroupDescriptor jspPropertyGroup : jspConfigDescriptor.getJspPropertyGroups()) {
+                urlPatterns.addAll(jspPropertyGroup.getUrlPatterns());
+            }
+        }
+
+        return urlPatterns;
     }
 
     /**

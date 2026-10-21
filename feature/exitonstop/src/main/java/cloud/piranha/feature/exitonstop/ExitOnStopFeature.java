@@ -34,8 +34,8 @@ import cloud.piranha.feature.impl.DefaultFeature;
  *
  * <p>
  *  The Exit on Stop feature will exit the JVM after all the features have
- *  asked to be stopped. It waits for a predefined amount of time before it
- *  calls System.exit.
+ *  asked to be stopped. It waits for the thread that stops them to finish,
+ *  for at most a predefined amount of time, before it calls System.exit.
  * </p>
  *
  * @author Manfred Riem (mriem@manorrock.com)
@@ -65,12 +65,13 @@ public class ExitOnStopFeature extends DefaultFeature {
 
     @Override
     public void stop() {
+        Thread stoppingThread = Thread.currentThread();
         Thread thread = new Thread() {
             @Override
             public void run() {
                 exiting = true;
                 try {
-                    Thread.sleep(2000);
+                    stoppingThread.join(2000);
                 } catch(InterruptedException ie) {
                     Thread.currentThread().interrupt();
                 }

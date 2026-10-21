@@ -36,6 +36,7 @@ import jakarta.servlet.Filter;
 import jakarta.servlet.Servlet;
 import jakarta.servlet.ServletException;
 import java.lang.System.Logger;
+import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.WARNING;
 
 /**
@@ -56,18 +57,35 @@ public class WeldObjectInstanceManager implements ObjectInstanceManager {
     public WeldObjectInstanceManager() {
     }
 
+    /**
+     * Get the bean manager, if CDI is available. It isn't when Weld didn't start, e.g. because the web application
+     * has no bean archive: then objects are created without CDI, as expected.
+     *
+     * @return the bean manager, or null if CDI isn't available.
+     */
+    private static BeanManager getBeanManager() {
+        try {
+            return CDI.current().getBeanManager();
+        } catch (IllegalStateException exception) {
+            LOGGER.log(DEBUG, "CDI is not available, creating without CDI", exception);
+            return null;
+        }
+    }
+
     @Override
     public <T extends Filter> T createFilter(Class<T> filterClass) throws ServletException {
         T result = null;
         boolean constructed = false;
-        try {
-            BeanManager beanManager = CDI.current().getBeanManager();
-            Unmanaged<T> unmanaged = new Unmanaged<>(beanManager, filterClass);
-            Unmanaged.UnmanagedInstance<T> unmanagedInstance = unmanaged.newInstance();
-            result = unmanagedInstance.produce().inject().postConstruct().get();
-            constructed = true;
-        } catch (Exception exception) {
-            LOGGER.log(WARNING, "Unable to create Filter using CDI", exception);
+        BeanManager beanManager = getBeanManager();
+        if (beanManager != null) {
+            try {
+                Unmanaged<T> unmanaged = new Unmanaged<>(beanManager, filterClass);
+                Unmanaged.UnmanagedInstance<T> unmanagedInstance = unmanaged.newInstance();
+                result = unmanagedInstance.produce().inject().postConstruct().get();
+                constructed = true;
+            } catch (Exception exception) {
+                LOGGER.log(WARNING, "Unable to create Filter using CDI", exception);
+            }
         }
         if (!constructed) {
             try {
@@ -83,14 +101,16 @@ public class WeldObjectInstanceManager implements ObjectInstanceManager {
     public <T extends EventListener> T createListener(Class<T> clazz) throws ServletException {
         T result = null;
         boolean constructed = false;
-        try {
-            BeanManager beanManager = CDI.current().getBeanManager();
-            Unmanaged<T> unmanaged = new Unmanaged<>(beanManager, clazz);
-            Unmanaged.UnmanagedInstance<T> unmanagedInstance = unmanaged.newInstance();
-            result = unmanagedInstance.produce().inject().postConstruct().get();
-            constructed = true;
-        } catch (Exception exception) {
-            LOGGER.log(WARNING, "Unable to create Listener using CDI", exception);
+        BeanManager beanManager = getBeanManager();
+        if (beanManager != null) {
+            try {
+                Unmanaged<T> unmanaged = new Unmanaged<>(beanManager, clazz);
+                Unmanaged.UnmanagedInstance<T> unmanagedInstance = unmanaged.newInstance();
+                result = unmanagedInstance.produce().inject().postConstruct().get();
+                constructed = true;
+            } catch (Exception exception) {
+                LOGGER.log(WARNING, "Unable to create Listener using CDI", exception);
+            }
         }
         if (!constructed) {
             try {
@@ -106,14 +126,16 @@ public class WeldObjectInstanceManager implements ObjectInstanceManager {
     public <T extends Servlet> T createServlet(Class<T> servletClass) throws ServletException {
         T result = null;
         boolean constructed = false;
-        try {
-            BeanManager beanManager = CDI.current().getBeanManager();
-            Unmanaged<T> unmanaged = new Unmanaged<>(beanManager, servletClass);
-            Unmanaged.UnmanagedInstance<T> unmanagedInstance = unmanaged.newInstance();
-            result = unmanagedInstance.produce().inject().postConstruct().get();
-            constructed = true;
-        } catch (Exception exception) {
-            LOGGER.log(WARNING, "Unable to create Servlet using CDI", exception);
+        BeanManager beanManager = getBeanManager();
+        if (beanManager != null) {
+            try {
+                Unmanaged<T> unmanaged = new Unmanaged<>(beanManager, servletClass);
+                Unmanaged.UnmanagedInstance<T> unmanagedInstance = unmanaged.newInstance();
+                result = unmanagedInstance.produce().inject().postConstruct().get();
+                constructed = true;
+            } catch (Exception exception) {
+                LOGGER.log(WARNING, "Unable to create Servlet using CDI", exception);
+            }
         }
         if (!constructed) {
             try {

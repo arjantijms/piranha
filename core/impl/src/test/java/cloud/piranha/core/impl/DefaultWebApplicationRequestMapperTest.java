@@ -118,6 +118,28 @@ class DefaultWebApplicationRequestMapperTest {
     }
 
     /**
+     * Test findServletMapping method.
+     *
+     * <p>
+     *  Test that of the prefix mappings that match, the longest one is found.
+     * </p>
+     */
+    @Test
+    void testFindServletMappingLongestPrefix() {
+        DefaultWebApplicationRequestMapper mapper = new DefaultWebApplicationRequestMapper();
+        mapper.addServletMapping("root", "/*");
+        mapper.addServletMapping("a", "/a/*");
+        mapper.addServletMapping("ab", "/a/b/*");
+        mapper.addServletMapping("abc", "/a/b/c/*");
+        mapper.addServletMapping("other", "/other/*");
+        assertEquals("/a/b/c/*", mapper.findServletMapping("/a/b/c/page.jsp").getPattern());
+        assertEquals("/a/b/*", mapper.findServletMapping("/a/b/page.jsp").getPattern());
+        assertEquals("/a/b/*", mapper.findServletMapping("/a/b").getPattern());
+        assertEquals("/a/*", mapper.findServletMapping("/a/bc").getPattern());
+        assertEquals("/*", mapper.findServletMapping("/b").getPattern());
+    }
+
+    /**
      * Test findExactServletMatch method.
      *
      * @throws Exception

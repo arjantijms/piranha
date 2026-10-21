@@ -30,6 +30,7 @@ package cloud.piranha.resource.shrinkwrap;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLConnection;
 import java.net.URLStreamHandler;
 import java.util.Collection;
 import java.util.stream.Stream;
@@ -124,8 +125,23 @@ public class ShrinkWrapResource implements Resource {
         URLStreamHandler streamHandler = archiveStreamHandler;
         Asset asset = node.getAsset();
         if (asset == null) {
-            // Node was a directory
-            streamHandler = new NodeURLStreamHandler(getContentFromNode(node));
+            if (node.getPath().getParent() == null) {
+                // Node was the root: opens as getResourceAsStream gives it
+                streamHandler = new URLStreamHandler() {
+                    @Override
+                    protected URLConnection openConnection(URL requestedUrl) {
+                        return new StreamConnection(requestedUrl) {
+                            @Override
+                            public InputStream getInputStream() {
+                                return new ShrinkWrapArchiveInputStream(archive, getContentFromNode(node));
+                            }
+                        };
+                    }
+                };
+            } else {
+                // Node was a directory
+                streamHandler = new NodeURLStreamHandler(getContentFromNode(node));
+            }
         }
 
         try {
@@ -168,6 +184,12 @@ public class ShrinkWrapResource implements Resource {
 
         Asset asset = node.getAsset();
         if (asset == null) {
+            if (node.getPath().getParent() == null) {
+                // Node was the root, such as for shrinkwrap://x.jar: lists the entries, and gives the archive as a
+                // zip when read as bytes, as a jar's URL gives the jar, so that jar:shrinkwrap://x.jar!/ reads from it
+                return new ShrinkWrapArchiveInputStream(archive, getContentFromNode(node));
+            }
+
             // Node was a directory
             return new ShrinkWrapDirectoryInputStream(getContentFromNode(node));
         }
@@ -251,6 +273,14 @@ public class ShrinkWrapResource implements Resource {
     }
 
     private Node getNode(Archive<?> archiveToGetFrom, String location) {
+        if (location.length() > 1 && location.endsWith("/")) {
+            // A directory, as in ClassLoader.getResources("META-INF/"); ShrinkWrap's paths have no trailing slash
+            Node node = archiveToGetFrom.get(
+                    ArchivePaths.create(
+                            location.substring(0, location.length() - 1)));
+            return node != null && node.getAsset() == null ? node : null;
+        }
+
         return archiveToGetFrom.get(
                 ArchivePaths.create(
                         location));

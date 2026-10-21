@@ -55,6 +55,8 @@ public class WaspJspManager implements JspManager {
     public ServletRegistration.Dynamic addJspFile(WebApplication webApplication, String servletName, String jspFile) {
         ServletRegistration.Dynamic registration = webApplication.addServlet(servletName, new WaspServlet(jspFile));
         registration.addMapping(jspFile);
+        // First, as setInitParameter doesn't change an init parameter that's set already
+        WaspInitializer.setInitParametersFromSystemProperties(registration);
         registration.setInitParameter("classpath", System.getProperty("java.class.path"));
         registration.setInitParameter("compilerSourceVM", "1.8");
         registration.setInitParameter("compilerTargetVM", "1.8");

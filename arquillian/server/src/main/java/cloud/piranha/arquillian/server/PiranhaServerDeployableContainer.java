@@ -27,7 +27,11 @@
  */
 package cloud.piranha.arquillian.server;
 
+import java.io.IOException;
 import java.lang.System.Logger;
+import java.net.ServerSocket;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.jboss.arquillian.container.spi.client.container.DeploymentException;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.HTTPContext;
@@ -44,7 +48,8 @@ import static java.lang.System.Logger.Level.INFO;
  *
  * <p>
  * This connector will start up an embedded Piranha Micro runtime in an isolated class loader for every application that is
- * deployed.
+ * deployed. Each one has an HTTP server of its own: on the configured port, or, for an application deployed while
+ * another one runs on that port, on a free port.
  *
  * @author Arjan Tijms
  *
@@ -62,9 +67,9 @@ public class PiranhaServerDeployableContainer extends PiranhaServerLoadableExten
     private PiranhaServerContainerConfiguration configuration;
     
     /**
-     * Stores the outer deployer.
+     * Stores the deployed applications, by archive name.
      */
-    private MicroOuterDeployer microOuterDeployer;
+    private final Map<String, Deployment> deployments = new HashMap<>();
 
     /**
      * Constructor.
@@ -82,11 +87,21 @@ public class PiranhaServerDeployableContainer extends PiranhaServerLoadableExten
     public ProtocolMetaData deploy(Archive<?> archive) throws DeploymentException {
         LOGGER.log(INFO, "Starting Piranha Micro");
 
-        microOuterDeployer = new MicroOuterDeployer(configuration);
+        int port = getPort();
+        MicroOuterDeployer microOuterDeployer = new MicroOuterDeployer(
+                port == configuration.getPort() ? configuration : configuration.withPort(port));
 
-        MicroDeployOutcome deployOutcome = microOuterDeployer.deploy(archive);
+        MicroDeployOutcome deployOutcome;
+        try {
+            deployOutcome = microOuterDeployer.deploy(archive);
+        } catch (RuntimeException e) {
+            // Don't leave a partly started Piranha Micro behind, which may hold the port
+            microOuterDeployer.stop();
+            throw e;
+        }
+        deployments.put(archive.getName(), new Deployment(microOuterDeployer, port));
 
-        HTTPContext httpContext = new HTTPContext("localhost", configuration.getPort());
+        HTTPContext httpContext = new HTTPContext("localhost", port);
 
         String contextRoot = deployOutcome.getDeployedContextRoot();
         if (contextRoot == null) {
@@ -105,12 +120,39 @@ public class PiranhaServerDeployableContainer extends PiranhaServerLoadableExten
 
     @Override
     public void undeploy(Archive<?> archive) throws DeploymentException {
-        if (microOuterDeployer != null) {
+        Deployment deployment = deployments.remove(archive.getName());
+        if (deployment != null) {
             LOGGER.log(INFO, "Stopping Piranha Micro");
-            microOuterDeployer.stop();
+            deployment.microOuterDeployer().stop();
         }
     }
 
+    /**
+     * Get the port for the HTTP server of an application to deploy: the configured port, unless an application that's
+     * still deployed runs on it.
+     *
+     * @return the port.
+     * @throws DeploymentException when no free port can be found.
+     */
+    private int getPort() throws DeploymentException {
+        int configuredPort = configuration.getPort();
+        if (deployments.values().stream().noneMatch(deployment -> deployment.port() == configuredPort)) {
+            return configuredPort;
+        }
 
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            return serverSocket.getLocalPort();
+        } catch (IOException e) {
+            throw new DeploymentException("Unable to find a free port", e);
+        }
+    }
 
+    /**
+     * A deployed application.
+     *
+     * @param microOuterDeployer the outer deployer of its Piranha Micro.
+     * @param port the port of its HTTP server.
+     */
+    private record Deployment(MicroOuterDeployer microOuterDeployer, int port) {
+    }
 }

@@ -46,6 +46,7 @@ import cloud.piranha.extension.servletannotations.ServletAnnotationsExtension;
 import cloud.piranha.extension.tempdir.TempDirExtension;
 import cloud.piranha.extension.transact.TransactExtension;
 import cloud.piranha.extension.wasp.WaspExtension;
+import cloud.piranha.extension.wasp.WaspJspManagerExtension;
 import cloud.piranha.extension.webxml.WebXmlExtension;
 import cloud.piranha.extension.welcomefile.WelcomeFileExtension;
 
@@ -71,14 +72,15 @@ public class MicroExtension implements WebApplicationExtension {
         context.add(WelcomeFileExtension.class);                // welcome-file
         context.add(ServletSecurityManagerExtension.class);     // Servlet security
         context.add(FileUploadExtension.class);                 // Upload
+        context.add(WaspJspManagerExtension.class);             // addJspFile, before web.xml uses it for jsp-file
         context.add(WebXmlExtension.class);                     // web.xml
         context.add(ServletAnnotationsExtension.class);         // Servlet annotations
         context.add(DeclaredExtension.class);                   // 
         context.add(NamingExtension.class);                     // Naming (JNDI)
         context.add(DefaultDatasourceExtension.class);          // Default data source
+        context.add(WaspExtension.class);                       // Jakarta Pages, before Weld adds its EL resolver to it
         context.add(JakartaSecurityExtension.class);            // Jakarta Security (includes Jakarta CDI)
         context.add(TransactExtension.class);                   // Jakarta Transaction
-        context.add(WaspExtension.class);                       // Jakarta Pages
         context.add(EclipseLinkExtension.class);                // Jakarta Persistence
     }
 

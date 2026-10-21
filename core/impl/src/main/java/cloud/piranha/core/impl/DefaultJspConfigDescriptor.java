@@ -47,6 +47,11 @@ public class DefaultJspConfigDescriptor implements JspConfigDescriptor {
     private List<TaglibDescriptor> taglibs = new ArrayList<>();
 
     /**
+     * Stores the JSP property groups.
+     */
+    private List<JspPropertyGroupDescriptor> jspPropertyGroups = new ArrayList<>();
+
+    /**
      * Constructor.
      */
     public DefaultJspConfigDescriptor() {
@@ -59,6 +64,6 @@ public class DefaultJspConfigDescriptor implements JspConfigDescriptor {
 
     @Override
     public Collection<JspPropertyGroupDescriptor> getJspPropertyGroups() {
-        return new ArrayList<>();
+        return jspPropertyGroups;
     }
 }

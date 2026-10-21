@@ -32,6 +32,7 @@ import static java.lang.System.Logger.Level.WARNING;
 import java.lang.System.Logger;
 
 import cloud.piranha.core.api.WebApplication;
+import cloud.piranha.extension.weld.WeldInitializer;
 import cloud.piranha.core.api.WebApplicationExtension;
 import jakarta.servlet.ServletContainerInitializer;
 
@@ -60,6 +61,9 @@ public class JakartaSecurityExtension implements WebApplicationExtension {
      */
     @Override
     public void configure(WebApplication webApplication) {
+        // JakartaSecurityAllInitializer starts Weld with Weld's own initializer
+        WeldInitializer.ignoreDiscoveredWeldInitializer(webApplication);
+
         try {
             webApplication.addInitializer(
                 webApplication.getClassLoader()

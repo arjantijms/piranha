@@ -109,7 +109,8 @@ public class DefaultInvocationFinder {
     public DefaultServletInvocation findServletInvocationByPath(DispatcherType dispatcherType, String servletPath, String pathInfo) throws IOException, ServletException {
         if (LOGGER.isLoggable(TRACE)) {
             LOGGER.log(TRACE, "Find servlet invocation by path");
-            LOGGER.log(TRACE, "DispatcherType: {0}", dispatcherType.name());
+            // Null for a request dispatcher, which only gets its dispatcher type when it's used
+            LOGGER.log(TRACE, "DispatcherType: {0}", dispatcherType);
             LOGGER.log(TRACE, "Servlet path: {0}", servletPath);
             LOGGER.log(TRACE, "Path info: {0}", pathInfo);
         }

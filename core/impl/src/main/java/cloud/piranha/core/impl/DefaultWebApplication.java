@@ -824,16 +824,53 @@ public class DefaultWebApplication implements WebApplication {
 
     @Override
     public DefaultServletRequestDispatcher getRequestDispatcher(String path) {
+        if (path == null) {
+            return null;
+        }
         try {
-            DefaultServletInvocation servletInvocation = invocationFinder.findServletInvocationByPath(null, path, null);
+            // The servlet path and path info of the invocation come from the normalized path without its query
+            // string. The dispatcher gets the query string too.
+            int queryIndex = path.indexOf('?');
+            String normalizedPath = normalizeDispatchPath(queryIndex == -1 ? path : path.substring(0, queryIndex));
+            if (normalizedPath == null) {
+                return null;
+            }
+            DefaultServletInvocation servletInvocation = invocationFinder.findServletInvocationByPath(null, normalizedPath, null);
             if (servletInvocation == null) {
                 return null;
             }
+            servletInvocation.setInvocationPath(queryIndex == -1 ? normalizedPath : normalizedPath + path.substring(queryIndex));
             return getInvocationDispatcher(servletInvocation);
         } catch (IOException | ServletException e) {
             LOGGER.log(WARNING, "Error occurred while getting request dispatcher", e);
             return null;
         }
+    }
+
+    /**
+     * Normalizes the path of a request dispatcher as a URL path, the same on every platform. A backslash counts as a
+     * slash, empty and "." segments are removed, and a ".." segment removes the segment before it. A trailing slash is
+     * kept.
+     *
+     * @param path the path, without a query string.
+     * @return the normalized path, which starts with a slash, or null when the path goes outside the web application.
+     */
+    static String normalizeDispatchPath(String path) {
+        String[] segments = path.replace('\\', '/').split("/", -1);
+        List<String> normalized = new ArrayList<>();
+        for (int i = 0; i < segments.length; i++) {
+            String segment = segments[i];
+            if (segment.equals("..")) {
+                if (normalized.isEmpty()) {
+                    return null;
+                }
+                normalized.remove(normalized.size() - 1);
+            } else if (!segment.equals(".") && (!segment.isEmpty() || i == segments.length - 1)) {
+                // An empty last segment is the trailing slash
+                normalized.add(segment);
+            }
+        }
+        return normalized.isEmpty() ? "/" : "/" + String.join("/", normalized);
     }
 
     @Override

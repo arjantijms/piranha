@@ -75,11 +75,11 @@ public class WebProfileExtension implements WebApplicationExtension {
         context.add(getAnnotationScanExtensionClass());             // Annotation scanning
         context.add(ServletAnnotationsExtension.class);             // Servlet annotations
         context.add(DeclaredExtension.class);                       //
+        context.add(WaspExtension.class);                           // WaSP, before Weld adds its EL resolver to it
         context.add(WeldExtension.class);                           // CDI / Weld
         context.add(DefaultDatasourceExtension.class);              // Default data source
         context.add(TransactExtension.class);                       // OmniFish Transaction
         context.add(ServletSecurityExtension.class);                // Security implementation
-        context.add(WaspExtension.class);                           // WaSP
         context.add(EclipseLinkExtension.class);                    // Jakarta Persistence
         context.add(ServletContainerInitializerExtension.class);    // ServletContainerInitializer
     }

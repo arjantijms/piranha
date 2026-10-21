@@ -54,4 +54,21 @@ class EffectiveMajorVersionTest {
         webApplication.initialize();
         assertEquals(5, webApplication.getEffectiveMajorVersion());
     }
+
+    /**
+     * Test the effective version of a web.xml that declares it with a DOCTYPE instead of a version attribute, without
+     * loading the DTD.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testEffectiveVersionOfDocumentType() throws Exception {
+        DefaultWebApplication webApplication = new DefaultWebApplication();
+        webApplication.addResource(new DirectoryResource(new File("src/test/webxml/effectiveVersionDocumentType")));
+        webApplication.addInitializer(new WebXmlInitializer());
+        webApplication.initialize();
+        assertEquals("value", webApplication.getInitParameter("name"));
+        assertEquals(2, webApplication.getEffectiveMajorVersion());
+        assertEquals(3, webApplication.getEffectiveMinorVersion());
+    }
 }

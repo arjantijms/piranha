@@ -217,6 +217,29 @@ public class MicroConfiguration {
     }
 
     /**
+     * Copy the configuration, with another port.
+     *
+     * @param port the port of the copy.
+     * @return the copy.
+     */
+    public MicroConfiguration withPort(int port) {
+        return new MicroConfiguration(
+                version,
+                extensions,
+                dependencies,
+                repositories,
+                offline,
+                port,
+                rootIsWarName,
+                root,
+                httpServer,
+                httpStart,
+                extensionsList,
+                repositoriesList,
+                mergedDependencies);
+    }
+
+    /**
      * Construct a map for the configuration.
      * 
      * @return the map.
