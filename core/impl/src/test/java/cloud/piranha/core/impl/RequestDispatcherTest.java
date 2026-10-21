@@ -1132,6 +1132,237 @@ class RequestDispatcherTest {
     }
 
     /**
+     * Test that the query string of a dispatcher path is kept as is, and not normalized as if it were part of the
+     * path.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testForwardQueryStringIsNotNormalized() throws Exception {
+        WebApplication webApplication = new DefaultWebApplicationBuilder()
+                .servlet("Outer", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        request.getRequestDispatcher("/target/./info?p=a/../b").forward(request, response);
+                    }
+                })
+                .servletMapping("Outer", "/outer")
+                .servlet("Target", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        response.getWriter().print(request.getServletPath() + "," + request.getPathInfo() + ","
+                                + request.getQueryString() + "," + request.getParameter("p"));
+                    }
+                })
+                .servletMapping("Target", "/target/*")
+                .build()
+                .initialize()
+                .start();
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath("/outer")
+                .build();
+
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+
+        webApplication.service(request, response);
+        assertEquals("/target,/info,p=a/../b,a/../b", byteOutput.toString());
+    }
+
+    /**
+     * Test that a dispatcher path is normalized without regard to the file system, so characters a file system might
+     * not allow are kept, and a trailing slash too.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testForwardPathIsNormalizedAsUrlPath() throws Exception {
+        assertEquals("/target,/a:b*", forwardFromRequest("/target/./a:b*"));
+        assertEquals("/target,/dir/", forwardFromRequest("/target//dir/"));
+    }
+
+    /**
+     * Test that a dispatcher path that goes outside the web application gives no dispatcher.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testRequestDispatcherOutsideWebApplication() throws Exception {
+        assertEquals("no dispatcher", forwardFromRequest("/../target/info"));
+        assertEquals("no dispatcher", forwardFromRequest("/target/../../info"));
+    }
+
+    /**
+     * Test that a path relative to the request is resolved against the servlet path and path info of the request.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testForwardRelativePath() throws Exception {
+        assertEquals("/target,/b/d", forwardFromRequest("/target/b/c", "d"));
+        assertEquals("/target,/d", forwardFromRequest("/target/b/c", "../d"));
+    }
+
+    /**
+     * Test that the servlet context normalizes a dispatcher path too.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testServletContextRequestDispatcherNormalizesPath() throws Exception {
+        WebApplication webApplication = new DefaultWebApplicationBuilder()
+                .servlet("Target", new TargetServlet())
+                .servletMapping("Target", "/target/*")
+                .build()
+                .initialize()
+                .start();
+
+        assertNull(webApplication.getRequestDispatcher("/../target/info"));
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath("/outer")
+                .build();
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+        webApplication.linkRequestAndResponse(request, response);
+        webApplication.getRequestDispatcher("/x/../target/./info").forward(request, response);
+        assertEquals("/target,/info", byteOutput.toString());
+    }
+
+    /**
+     * Test that in an included servlet, a path relative to the request is resolved against the servlet path and path
+     * info of the include.
+     *
+     * @throws Exception when a serious error occurs.
+     */
+    @Test
+    void testIncludeRelativePath() throws Exception {
+        WebApplication webApplication = new DefaultWebApplicationBuilder()
+                .servlet("Outer", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        request.getRequestDispatcher("/sub/page").include(request, response);
+                    }
+                })
+                .servletMapping("Outer", "/outer/*")
+                .servlet("Inner", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        request.getRequestDispatcher("../target/info").include(request, response);
+                    }
+                })
+                .servletMapping("Inner", "/sub/*")
+                .servlet("Target", new HttpServlet() {
+                    @Override
+                    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                        response.getWriter().print(request.getAttribute(INCLUDE_SERVLET_PATH) + ","
+                                + request.getAttribute(INCLUDE_PATH_INFO));
+                    }
+                })
+                .servletMapping("Target", "/target/*")
+                .build()
+                .initialize()
+                .start();
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath("/outer/deeper/path")
+                .build();
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+
+        webApplication.service(request, response);
+        assertEquals("/target,/info", byteOutput.toString());
+    }
+
+    /**
+     * Forwards from a servlet at /outer to the given path, which a servlet at /target/* answers.
+     *
+     * @param path the dispatcher path.
+     * @return the servlet path and path info the target servlet sees, or "no dispatcher".
+     * @throws Exception when a serious error occurs.
+     */
+    private static String forwardFromRequest(String path) throws Exception {
+        return forwardFromRequest("/outer", path);
+    }
+
+    /**
+     * Forwards from a servlet at the given request path to the given dispatcher path, which a servlet at /target/*
+     * answers.
+     *
+     * @param requestPath the path of the request, which a servlet mapped to it or to /target/* gets.
+     * @param path the dispatcher path.
+     * @return the servlet path and path info the target servlet sees, or "no dispatcher".
+     * @throws Exception when a serious error occurs.
+     */
+    private static String forwardFromRequest(String requestPath, String path) throws Exception {
+        HttpServlet forwardingServlet = new HttpServlet() {
+            @Override
+            protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+                if (request.getDispatcherType() == jakarta.servlet.DispatcherType.FORWARD) {
+                    new TargetServlet().doGet(request, response);
+                    return;
+                }
+                RequestDispatcher dispatcher = request.getRequestDispatcher(path);
+                if (dispatcher == null) {
+                    response.getWriter().print("no dispatcher");
+                } else {
+                    dispatcher.forward(request, response);
+                }
+            }
+        };
+        DefaultWebApplicationBuilder builder = new DefaultWebApplicationBuilder();
+        if (requestPath.startsWith("/target/")) {
+            // The request servlet is the target servlet too
+            builder.servlet("Target", forwardingServlet).servletMapping("Target", "/target/*");
+        } else {
+            builder.servlet("Outer", forwardingServlet).servletMapping("Outer", requestPath)
+                    .servlet("Target", new TargetServlet()).servletMapping("Target", "/target/*");
+        }
+        WebApplication webApplication = builder.build().initialize().start();
+
+        DefaultWebApplicationRequest request = new DefaultWebApplicationRequestBuilder()
+                .webApplication(webApplication)
+                .servletPath(requestPath)
+                .build();
+        ByteArrayOutputStream byteOutput = new ByteArrayOutputStream();
+        DefaultWebApplicationResponse response = new DefaultWebApplicationResponseBuilder()
+                .webApplication(webApplication)
+                .bodyOnly(true)
+                .underlyingOutputStream(byteOutput)
+                .build();
+
+        webApplication.service(request, response);
+        return byteOutput.toString();
+    }
+
+    /**
+     * Prints the servlet path and path info it sees.
+     */
+    static class TargetServlet extends HttpServlet {
+
+        @Override
+        protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
+            response.getWriter().print(request.getServletPath() + "," + request.getPathInfo());
+        }
+    }
+
+    /**
      * Test that the forward attributes stay those of the original request when a forwarded servlet forwards again.
      *
      * @throws Exception when a serious error occurs.

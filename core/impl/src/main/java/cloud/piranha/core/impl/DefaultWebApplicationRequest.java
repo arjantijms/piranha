@@ -40,7 +40,9 @@ import static jakarta.servlet.DispatcherType.INCLUDE;
 import jakarta.servlet.MultipartConfigElement;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.RequestDispatcher;
+import static jakarta.servlet.RequestDispatcher.INCLUDE_PATH_INFO;
 import static jakarta.servlet.RequestDispatcher.INCLUDE_QUERY_STRING;
+import static jakarta.servlet.RequestDispatcher.INCLUDE_SERVLET_PATH;
 import jakarta.servlet.ServletConnection;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletInputStream;
@@ -67,8 +69,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -817,13 +817,25 @@ public class DefaultWebApplicationRequest implements WebApplicationRequest {
 
     @Override
     public RequestDispatcher getRequestDispatcher(String path) {
-        Path rootContext = Paths.get(getContextPath());
-        Path resolved = rootContext.resolveSibling(Paths.get(path)).normalize();
-        if (!resolved.startsWith(rootContext)) {
-            resolved = rootContext.resolveSibling(resolved);
+        if (path == null) {
+            return null;
         }
-        String servletPath = resolved.toString().replace('\\', '/');
-        return webApplication.getRequestDispatcher(servletPath);
+        if (path.startsWith("/")) {
+            return webApplication.getRequestDispatcher(path);
+        }
+
+        // A relative path is relative to the current request, which is the included one during an include. The web
+        // application normalizes the resulting path.
+        String requestServletPath = (String) getAttribute(INCLUDE_SERVLET_PATH);
+        String requestPathInfo;
+        if (requestServletPath != null) {
+            requestPathInfo = (String) getAttribute(INCLUDE_PATH_INFO);
+        } else {
+            requestServletPath = getServletPath();
+            requestPathInfo = getPathInfo();
+        }
+        String requestPath = requestPathInfo == null ? requestServletPath : requestServletPath + requestPathInfo;
+        return webApplication.getRequestDispatcher(requestPath.substring(0, requestPath.lastIndexOf('/') + 1) + path);
     }
 
     @Override
